@@ -1899,7 +1899,8 @@ function rec(p,d){return cached('r'+p.id+d,()=>{const lead=diff(T,d),F=[];const 
  let price=Math.max(rp(x),num(p.min));if(num(p.manMax))price=Math.min(price,num(p.manMax));const cl=rp(x)<num(p.min)?'min':'';const ov=p.overrides[d];if(ov){if(ov.price)price=num(ov.price);if(ov.minStay)ms=num(ov.minStay)}
  return {d,lead,price,cl,t,M,guest:price+gv(p),raw:x,nominal,fair:Math.max(rp(nominal),num(p.min)),F,ms,ev,g:0,ov:!!ov,mk}})}
 const occM=(p,m)=>clamp(num(p.occ,70)/100*(1+num(p.season[+m.slice(5)-1])/100),num(p.occMin,70)/100,.95);
-function pday(p,d,r){const o=occM(p,d.slice(0,7));let q=r.t==='sem'?o*.92:Math.min(.97,r.t==='fds'?o*1.15:o*1.2);if(r.mk.checked>=3)q=Math.max(q,r.mk.un/r.mk.checked);return clamp(q,.05,.97)}
+function elast(p,r){if(!r.mk||!r.mk.rate)return 1;const ratio=(r.price+gv(p))/r.mk.rate;return clamp(1-num(p.elasticidad,1.2)*(ratio-1),.55,1.2)}
+function pday(p,d,r){const o=occM(p,d.slice(0,7));let q=r.t==='sem'?o*.92:Math.min(.97,r.t==='fds'?o*1.15:o*1.2);if(r.mk.checked>=3)q=Math.max(q,r.mk.un/r.mk.checked);q*=elast(p,r);return clamp(q,.05,.97)}
 function prob0(p,d,r){return pday(p,d,r)}
 function prob(p,d,r){return r.lead<0?0:pday(p,d,r)}
 
@@ -1958,7 +1959,7 @@ function cargar(st, market, research, reservas, mapa){
     const osId=p.osId||mapa[p.id];if(osId&&reservas){const st2=reservas.filter(r=>r.propiedad_id===osId).map(r=>({id:r.codigo,start:r.checkin,end:r.checkout,source:'os'}));if(st2.length)p.stays=st2}}
   C.clear();applyAuto();C.clear();return state}
 const limpio=()=>{const s=JSON.parse(JSON.stringify(state));for(const p of s.properties){for(const c of p.competitors)c.obs=[];p.stays=(p.stays||[]).filter(x=>x.source!=='os');delete p.auto}delete s.research;return s};
-return {pday,stayOn,occM,cargar,limpio,get state(){return state},C,T,TM,rec,ms,track,mult,TIERS,TN,TDESC,fx,money,km,pct,autoPrice,applyAuto,ensurePlans,newProp,uid,mlabel,addDays,addMonths,fdate,eventFor,occ,PLAN_END,marginal,fixedCosts,keep,num,rp};
+return {pday,elast,stayOn,occM,cargar,limpio,get state(){return state},C,T,TM,rec,ms,track,mult,TIERS,TN,TDESC,fx,money,km,pct,autoPrice,applyAuto,ensurePlans,newProp,uid,mlabel,addDays,addMonths,fdate,eventFor,occ,PLAN_END,marginal,fixedCosts,keep,num,rp};
 })();
 
 /* ═════════ PRESUPUESTOS · PROYECCIONES · ASEOS — todo con los datos de BLÜM OS (demo) ═════════ */
@@ -3034,8 +3035,8 @@ const MERC_DEMO={
   }
  }
 };
-const TAR_INICIAL={"actualizado": "2026-11-24", "props": {"prxkpydpfg": {"nombre": "Firenze", "arriendo": 1025000, "otros": 1375000, "aseo": 60000, "limpieza": 60000, "gastoNoche": 0, "airbnbPct": 16, "blumPct": null, "zona": "urbano", "refs": [{"link": "https://www.airbnb.com.co/rooms/1303832779839545763"}, {"link": "https://www.airbnb.com.co/rooms/1357248863972334403"}, {"link": "https://www.airbnb.com.co/rooms/932555342119626549"}, {"link": "https://www.airbnb.com.co/rooms/1187921344071309723"}, {"link": "https://www.airbnb.com.co/rooms/1350930961990543298"}], "plan": {}}}};
-function cargarTar(){ if (TAR) return TAR; try { TAR=JSON.parse(localStorage.getItem(T_KEY)||'null'); } catch(e){} if (!TAR||!TAR.props) TAR=JSON.parse(JSON.stringify(TAR_INICIAL)); Object.values(TAR.props).forEach(c=>{ if (c.limpieza===''||c.limpieza==null||(c.limpieza===0&&!c.limpiezaOk)) { c.limpieza=60000; c.limpiezaOk=1; } }); MERC=MERC_DEMO; return TAR; }
+const TAR_INICIAL={"actualizado": "2026-11-24", "props": {"prxkpydpfg": {"nombre": "Firenze", "arriendo": 1025000, "otros": 1375000, "aseo": 60000, "limpieza": 60000, "gastoNoche": 0, "airbnbPct": 18.45, "blumPct": null, "zona": "urbano", "refs": [{"link": "https://www.airbnb.com.co/rooms/1303832779839545763"}, {"link": "https://www.airbnb.com.co/rooms/1357248863972334403"}, {"link": "https://www.airbnb.com.co/rooms/932555342119626549"}, {"link": "https://www.airbnb.com.co/rooms/1187921344071309723"}, {"link": "https://www.airbnb.com.co/rooms/1350930961990543298"}], "plan": {}}}};
+function cargarTar(){ if (TAR) return TAR; try { TAR=JSON.parse(localStorage.getItem(T_KEY)||'null'); } catch(e){} if (!TAR||!TAR.props) TAR=JSON.parse(JSON.stringify(TAR_INICIAL)); Object.values(TAR.props).forEach(c=>{ if (c.airbnbPct===16&&!c.airbnbOk) { c.airbnbPct=18.45; c.airbnbOk=1; } if (c.limpieza===''||c.limpieza==null||(c.limpieza===0&&!c.limpiezaOk)) { c.limpieza=60000; c.limpiezaOk=1; } }); MERC=MERC_DEMO; return TAR; }
 const datosT=()=>cargarTar();
 async function guardarT(d){ TAR=d; try { localStorage.setItem(T_KEY, JSON.stringify(d)); } catch(e){ throw new Error('No se pudo guardar en este navegador'); } }
 function avisoRev(cont, e){ cont.innerHTML='<div class="vacio">'+esc(e.message)+'</div>'; }
@@ -3056,15 +3057,17 @@ function costosBase(os){
 }
 function historial(os, inicio){
   const hoyS=hoy(), rs=(resPlan||[]).filter(r => r.propiedad_id===os.id && r.checkin<hoyS);
-  const desde = inicio || (rs.map(r=>r.checkin).sort()[0]) || null; if (!desde) return { n:0 };
+  const primera=(rs.map(r=>r.checkin).sort()[0])||null; if (!primera) return { n:0 }; const desde = inicio && inicio>primera ? inicio : primera;
   const ini=desde<'2025-01-01'?'2025-01-01':desde; let dias=Math.max(1,Math.round((pISO(hoyS)-pISO(ini))/864e5)), n=0, neto=0; const porMes={};
   rs.forEach(r => { const x=nochesEnRango(r, ini, RV.addDays(hoyS,-1)); if(!x) return; n+=x; neto+=Number(r.neto||0)*x/Math.max(1,Number(r.noches)||x); });
   for (let d=ini; d<hoyS; d=RV.addDays(d,1)) { const k=+d.slice(5,7)-1; porMes[k]=porMes[k]||{d:0,n:0}; porMes[k].d++; }
   rs.forEach(r => { for (let d=r.checkin; d<r.checkout && d<hoyS; d=RV.addDays(d,1)) if (d>=ini) { const k=+d.slice(5,7)-1; if (porMes[k]) porMes[k].n++; } });
-  const nr=rs.filter(r=>r.checkin>=ini).length; return { n, dias, occ: n/dias, neto, adrNeto: n? neto/n : 0, desde: ini, porMes, estancia: nr>=3 ? Math.max(1.2, Math.min(7, rs.filter(r=>r.checkin>=ini).reduce((a,r)=>a+(Number(r.noches)||0),0)/nr)) : 2.5 };
+  const nr=rs.filter(r=>r.checkin>=ini).length;
+  const fds=[], sem=[]; rs.forEach(r=>{ const nn=Number(r.noches)||0; if(!nn||!(Number(r.neto)>0)) return; let w=0; for(let d=r.checkin;d<r.checkout;d=RV.addDays(d,1)){ const g=pISO(d).getDay(); if(g===5||g===6) w++; } const pn=Number(r.neto)/nn; if (w===nn) fds.push(pn); else if (w===0) sem.push(pn); });
+  const med=a=>a.length? a.slice().sort((x,y)=>x-y)[Math.floor((a.length-1)/2)] : 0; return { n, dias, occ: n/dias, neto, adrNeto: n? neto/n : 0, desde: ini, porMes, semNoche: med(sem), fdsNoche: med(fds), estancia: nr>=3 ? Math.max(1.2, Math.min(7, rs.filter(r=>r.checkin>=ini).reduce((a,r)=>a+(Number(r.noches)||0),0)/nr)) : 2.5 };
 }
 function propEngine(os, cfg, cb, H){
-  const air=(cfg.airbnbPct!=null?cfg.airbnbPct:15.5), blum=(cfg.blumPct!=null?cfg.blumPct:(cb.blum!=null?cb.blum*100:15));
+  const air=(cfg.airbnbPct!=null&&cfg.airbnbPct!==''?cfg.airbnbPct:18.45), blum=(cfg.blumPct!=null?cfg.blumPct:(cb.blum!=null?cb.blum*100:15));
   const refs=(cfg.refs||[]).filter(r=>r&&r.link);
   /* Ocupación objetivo por mes: mínimo 70% (piso del negocio); sube con la temporada y con tu historial real de ese mes, máximo 95% */
   const season=[15,15,0,0,0,10,10,0,0,0,0,20];
@@ -3073,12 +3076,25 @@ function propEngine(os, cfg, cb, H){
     fixedRent:pesos(cfg.arriendo), fixedAdmin:0, fixedUtilities:cb.totalServ, fixedInternet:0, fixedOther:pesos(cfg.otros),
     cleanCost:pesos(cfg.aseo)||60000, cleanFee:(cfg.limpieza===''||cfg.limpieza==null)?60000:pesos(cfg.limpieza), varNight:pesos(cfg.gastoNoche), platformPct:air, mgmtPct:blum, mgmtBase: cb.baseNeto?'net':'gross',
     occ: 70, occMin: 70, season, avgStay:(H.estancia||2.5), minStay:2, compWeight:100, paceOn:false,
-    tFds:Number(cfg.tFds)||0, tEsp:Number(cfg.tEsp)||0, tEvt:Number(cfg.tEvt)||0, tTop:Number(cfg.tTop)||0, plan: JSON.parse(JSON.stringify(cfg.plan||{})) });
+    tFds:Number(cfg.tFds)||multFds(cfg, H, os), tEsp:Number(cfg.tEsp)||0, tEvt:Number(cfg.tEvt)||0, tTop:Number(cfg.tTop)||0, plan: JSON.parse(JSON.stringify(cfg.plan||{})) });
   const mo=(MERC&&MERC.props&&MERC.props[os.id])||{};
   p.competitors=Array.from({length:5},(_,i)=>{ const link=(cfg.refs&&cfg.refs[i]&&cfg.refs[i].link)||''; const id=(link.match(/rooms\/(\d+)/)||[])[1]||('r'+i); return { id, name:'Referente '+(i+1), link, obs: link ? (mo[id]||[]).map(o=>({date:o.date,status:o.status==='x'?'x':'ok',price:Number(o.price)||0,checked:o.checked})) : [] }; });
   p._refLinks=refs.length;
   p._histAdr = H.n ? Math.max(0, H.adrNeto/Math.max(.05,1-air/100) - ((cfg.limpieza===''||cfg.limpieza==null)?60000:pesos(cfg.limpieza))/(H.estancia||2.5)) : 0;  // tarifa publicada aprox. a partir del neto
   return p;
+}
+
+/* Fin de semana: el mayor entre (a) cuánto más cobran los referentes vie-sáb, (b) cuánto más se llenan vie-sáb y (c) cuánto más pagaron tus huéspedes vie-sáb; entre ×1,10 y ×1,40 */
+function multFds(cfg, H, os){
+  const mo=(MERC&&MERC.props&&MERC.props[os.id])||{}, we={o:0,t:0,p:[]}, wd={o:0,t:0,p:[]};
+  Object.values(mo).forEach(arr=>arr.forEach(o=>{ const g=pISO(o.date).getDay(), b=(g===5||g===6)?we:wd; b.t++; if(o.status==='x') b.o++; else if(o.price) b.p.push(o.price); }));
+  const med=a=>a.length? a.slice().sort((x,y)=>x-y)[Math.floor((a.length-1)/2)] : 0;
+  const cand=[];
+  if (we.p.length>=3 && wd.p.length>=3) cand.push(med(we.p)/med(wd.p));
+  if (we.t>=5 && wd.t>=5 && wd.o/wd.t>0) cand.push(1+0.5*((we.o/we.t)/(wd.o/wd.t)-1));
+  if (H && H.semNoche && H.fdsNoche) cand.push(H.fdsNoche/H.semNoche);
+  const v=cand.length? Math.max(...cand) : 1.2;
+  return Math.round(Math.max(1.10, Math.min(1.40, v))*20)/20;
 }
 async function cargarRev(forzar){
   if (rev && !forzar) return rev;
@@ -3178,7 +3194,7 @@ async function editarInmueble(os){
     '<h3 class="tit-card">Costos fijos del mes</h3>'+
     '<div class="nota-p" style="margin:0 0 8px">Servicios ya registrados en BLÜM OS: <b>'+cop(cb.totalServ)+'</b>'+(cb.servicios.length?' ('+cb.servicios.filter(s=>s.v).map(s=>esc(s.n)+' '+cop(s.v)).join(' · ')+')':'')+'. Los que no tienen valor se editan en la sección Servicios de la propiedad.</div>'+
     '<div class="grid dos" style="gap:10px">'+n('Arriendo o cuota','arriendo')+n('Otros fijos','otros','0','Predial, seguro, mantenimiento')+'</div>'+
-    '<h3 class="tit-card" style="margin-top:14px">Por reserva y comisiones</h3><div class="grid dos" style="gap:10px">'+n('Aseo que pagas por cada salida','aseo','60000')+n('Tarifa de limpieza que paga el huésped (por reserva)','limpieza','60000','Se suma al precio por noche en Airbnb; 0 si no cobras')+n('Gasto por noche ocupada','gastoNoche','0','Amenities, energía extra')+n('Comisión Airbnb %','airbnbPct','15,5')+n('Comisión BLÜM %','blumPct', cb.blum!=null? String(Math.round(cb.blum*1000)/10).replace('.',',') : '15','Del contrato vigente si lo dejas vacío')+
+    '<h3 class="tit-card" style="margin-top:14px">Por reserva y comisiones</h3><div class="grid dos" style="gap:10px">'+n('Aseo que pagas por cada salida','aseo','60000')+n('Tarifa de limpieza que paga el huésped (por reserva)','limpieza','60000','Se suma al precio por noche en Airbnb; 0 si no cobras')+n('Gasto por noche ocupada','gastoNoche','0','Amenities, energía extra')+n('Comisión Airbnb % (15,5% + IVA)','airbnbPct','18,45')+n('Comisión BLÜM %','blumPct', cb.blum!=null? String(Math.round(cb.blum*1000)/10).replace('.',',') : '15','Del contrato vigente si lo dejas vacío')+
     '<div><label>Ubicación</label><select data-k="zona"><option value="urbano">Ciudad</option><option value="playa"'+(c.zona==='playa'?' selected':'')+'>Playa</option></select></div></div>'+
     '<h3 class="tit-card" style="margin-top:14px">5 referentes (anuncios parecidos de la zona)</h3>'+refs.map((r,i)=>'<input data-rl="'+i+'" value="'+esc(r.link||'')+'" placeholder="https://www.airbnb.com.co/rooms/… · referente '+(i+1)+'" style="margin-top:6px">').join('')+
     '<div class="eti" style="text-transform:none;letter-spacing:0;margin-top:4px">Con estos anuncios se analiza qué noches tienen ocupadas y a qué precio, y con eso se ajustan tus tarifas sin bajar del punto de equilibrio.</div>'+
@@ -3222,14 +3238,14 @@ function presMes(p, m, completo){
   const G={sem:{l:'Entre semana',d:0,n:0,v:0},fds:{l:'Fin de semana',d:0,n:0,v:0},esp:{l:'Fechas especiales y eventos',d:0,n:0,v:0,ev:{}}}, k=kNeto(p);
   const fut=[]; let nFijo=0;
   for (const d of mdaysP(m)) { const r=RV.rec(p,d), k2=r.t==='sem'||r.t==='fds'?r.t:'esp', g=G[k2]; g.d++; if (g.ev&&r.ev) g.ev[r.ev.name]=1;
-    if (RV.stayOn(p,d)) { g.n++; g.v+=r.price; nFijo++; } else if (completo || d>=RV.T) fut.push({g, q:RV.pday(p,d,r), pr:r.price}); }
+    if (RV.stayOn(p,d)) { g.n++; g.v+=r.price; nFijo++; } else if (completo || d>=RV.T) fut.push({g, q:RV.pday(p,d,r), pr:r.price, e:RV.elast(p,r)}); }
   /* piso de ocupación del mes: nunca menos de la ocupación objetivo (mín. 70%) contando lo que aún se puede vender */
-  const obj=RV.occM(p,m)*diasMes(m), sumQ=fut.reduce((a,x)=>a+x.q,0), falta=Math.max(0, obj-nFijo-sumQ), cupo=fut.reduce((a,x)=>a+(1-x.q),0), f=cupo>0?Math.min(1,falta/cupo):0;
+  const eMed=fut.length? fut.reduce((a,x)=>a+x.e,0)/fut.length : 1, obj=RV.occM(p,m)*Math.min(1,eMed)*diasMes(m), sumQ=fut.reduce((a,x)=>a+x.q,0), falta=Math.max(0, obj-nFijo-sumQ), cupo=fut.reduce((a,x)=>a+(1-x.q),0), f=cupo>0?Math.min(1,falta/cupo):0;
   fut.forEach(x=>{ const q=x.q+(1-x.q)*f; x.g.n+=q; x.g.v+=x.pr*q; });
   const n=G.sem.n+G.fds.n+G.esp.n, bruto=G.sem.v+G.fds.v+G.esp.v, dias=diasMes(m), stays=n/Math.max(1,Number(p.avgStay)||2.5);
   const limp=Number(p.cleanFee||0)*stays, total=bruto+limp, airbnb=total*(1-k), neto=total-airbnb, blum=(p.mgmtBase==='net'?bruto*k:bruto)*Number(p.mgmtPct||0)/100, aseos=stays*Number(p.cleanCost||0)+n*Number(p.varNight||0), fijos=RV.fixedCosts(p);
   const r=realMes(p.osId,m);
-  return { m, G, n, dias, occ:n/dias, bruto, limp, total, airbnb, stays, adr:n?bruto/n:0, neto, blum, aseos, fijos, res: neto-blum-aseos-fijos, real:r };
+  return { m, G, eMed, n, dias, occ:n/dias, bruto, limp, total, airbnb, stays, adr:n?bruto/n:0, neto, blum, aseos, fijos, res: neto-blum-aseos-fijos, real:r };
 }
 const mdaysP=m=>Array.from({length:diasMes(m)},(_,i)=>m+'-'+String(i+1).padStart(2,'0'));
 
