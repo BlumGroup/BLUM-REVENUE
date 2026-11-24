@@ -1958,7 +1958,7 @@ function cargar(st, market, research, reservas, mapa){
     const osId=p.osId||mapa[p.id];if(osId&&reservas){const st2=reservas.filter(r=>r.propiedad_id===osId).map(r=>({id:r.codigo,start:r.checkin,end:r.checkout,source:'os'}));if(st2.length)p.stays=st2}}
   C.clear();applyAuto();C.clear();return state}
 const limpio=()=>{const s=JSON.parse(JSON.stringify(state));for(const p of s.properties){for(const c of p.competitors)c.obs=[];p.stays=(p.stays||[]).filter(x=>x.source!=='os');delete p.auto}delete s.research;return s};
-return {cargar,limpio,get state(){return state},C,T,TM,rec,ms,track,mult,TIERS,TN,TDESC,fx,money,km,pct,autoPrice,applyAuto,ensurePlans,newProp,uid,mlabel,addDays,addMonths,fdate,eventFor,occ,PLAN_END,marginal,fixedCosts,keep,num,rp};
+return {pday,stayOn,occM,cargar,limpio,get state(){return state},C,T,TM,rec,ms,track,mult,TIERS,TN,TDESC,fx,money,km,pct,autoPrice,applyAuto,ensurePlans,newProp,uid,mlabel,addDays,addMonths,fdate,eventFor,occ,PLAN_END,marginal,fixedCosts,keep,num,rp};
 })();
 
 /* ═════════ PRESUPUESTOS · PROYECCIONES · ASEOS — todo con los datos de BLÜM OS (demo) ═════════ */
@@ -3216,21 +3216,34 @@ async function cargarPpto(forzar){
   if (!ps.length) { C.innerHTML='<div class="card"><div class="vacio">Aún no hay inmuebles configurados. En <b>Propiedades</b> abre cada inmueble y completa <b>Referentes y costos</b>.</div></div>'; return; }
   pintarPpto();
 }
+const PERIODOS=[{t:'Diciembre 2026', sub:'Cierre del año', ms:['2026-12']},{t:'Q1 2027', sub:'Enero, febrero y marzo · incluye Carnaval', ms:['2027-01','2027-02','2027-03']}];
+function presMes(p, m){
+  const G={sem:{l:'Entre semana',d:0,n:0,v:0},fds:{l:'Fin de semana',d:0,n:0,v:0},esp:{l:'Fechas especiales y eventos',d:0,n:0,v:0,ev:{}}}, k=kNeto(p);
+  for (const d of mdaysP(m)) { const r=RV.rec(p,d), g=G[r.t==='sem'||r.t==='fds'?r.t:'esp'], q=RV.stayOn(p,d)?1:(d<RV.T?0:RV.pday(p,d,r)); g.d++; g.n+=q; g.v+=r.price*q; if (g.ev&&r.ev) g.ev[r.ev.name]=1; }
+  const n=G.sem.n+G.fds.n+G.esp.n, bruto=G.sem.v+G.fds.v+G.esp.v, dias=diasMes(m), stays=n/Math.max(1,Number(p.avgStay)||2.5);
+  const neto=(bruto+Number(p.cleanFee||0)*stays)*k, blum=(p.mgmtBase==='net'?neto:bruto)*Number(p.mgmtPct||0)/100, aseos=stays*Number(p.cleanCost||0)+n*Number(p.varNight||0), fijos=RV.fixedCosts(p);
+  const r=realMes(p.osId,m);
+  return { m, G, n, dias, occ:n/dias, bruto, adr:n?bruto/n:0, neto, blum, aseos, fijos, res: neto-blum-aseos-fijos, real:r };
+}
+const mdaysP=m=>Array.from({length:diasMes(m)},(_,i)=>m+'-'+String(i+1).padStart(2,'0'));
 function pintarPpto(){
-  const v=$('ppProp').value, pares=propsRC().map(os => ({os, rv:revDe(os)})).filter(x => x.rv && (!v || x.os.id===v));
-  const mHoy=hoy().slice(0,7), f=filaMes(pares, mHoy), est=estadoMes(f), dp=(+hoy().slice(8)-1)/diasMes(mHoy), falta=Math.max(0,f.meta-f.real), nF=f.adrP? Math.ceil(falta/f.adrP) : 0, libres=diasMes(mHoy)*pares.length-f.n;
-  const kp = (t, real, plan, fmt, extra) => '<div class="kpi"><div class="eti">'+t+'</div><div class="v">'+(real==null?'—':fmt(real))+'</div>'+(plan&&real!=null?barraP(real/plan):'')+'<div class="h">Proyectado '+(plan==null?'—':fmt(plan))+(plan&&real!=null?' · <b>'+pctS(real/plan)+'</b>':'')+(extra||'')+'</div></div>';
-  let h='<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div><h3 class="tit-card" style="margin:0">'+capM(mHoy)+' '+mHoy.slice(0,4)+' · real vs presupuesto</h3><div class="eti" style="margin-top:4px">'+Math.round(dp*100)+'% del mes transcurrido · real = reservas registradas en BLÜM OS</div></div><span class="chip '+est[1]+'" style="font-size:.9rem">'+est[0]+'</span></div>'+
-    '<div class="kpis" style="margin:14px 0 0">'+kp('Neto reservado', f.real, f.meta, cop)+kp('Ocupación', f.occR, f.occP, pctS, ' · '+f.n+' noches')+kp('Tarifa promedio neta', f.adrR, f.adrP, cop)+
-    '<div class="kpi"><div class="eti">'+(falta?'Te falta':'Meta cumplida')+'</div><div class="v '+(falta?'terra':'verde')+'">'+cop(falta)+'</div><div class="h">'+(falta? (nF<=libres? '≈ '+nF+' noches más a '+cop(f.adrP)+' · '+libres+' libres' : 'Quedan '+libres+' noches libres: no alcanza') : '¡Bien!')+'</div></div></div></div>';
-  const G={}; mesesPlan().forEach(m => (G[trimDe(m)]=G[trimDe(m)]||[]).push(m));
-  let filas='', Y={meta:0,real:0};
-  Object.keys(G).forEach(g => { const fs=G[g].map(m => filaMes(pares,m)), q={meta:fs.reduce((a,x)=>a+x.meta,0), real:fs.reduce((a,x)=>a+x.real,0)}; if (g!=='Cierre 2026'){ Y.meta+=q.meta; Y.real+=q.real; }
-    filas+='<tr class="subt"><td colspan="7">'+g+' · presupuesto '+cop(q.meta)+' · reservado '+cop(q.real)+' ('+pctS(q.meta?q.real/q.meta:null)+')</td></tr>';
-    fs.forEach(x => { const e=estadoMes(x); filas+='<tr'+(x.m===mHoy?' style="background:var(--sage-l)"':'')+'><td><b>'+capM(x.m)+'</b>'+(x.m===mHoy?' <span class="eti">en curso</span>':'')+'</td><td class="num-r"><b>'+cop(x.meta)+'</b></td><td class="num-r">'+(x.real?cop(x.real):'<span class="eti">—</span>')+'</td><td class="num-r">'+(x.m<=mHoy?chipPct(x.att):x.real?'<span class="eti">'+pctS(x.att)+'</span>':'<span class="eti">—</span>')+'</td><td class="num-r">'+pctS(x.occP)+' · <b>'+(x.n||x.m<=mHoy?pctS(x.occR):'—')+'</b></td><td class="num-r">'+(x.adrP?cop(x.adrP):'—')+' · <b>'+(x.adrR?cop(x.adrR):'—')+'</b></td><td>'+(x.m<=mHoy?'<span class="chip '+e[1]+'">'+e[0]+'</span>':'<span class="eti">'+x.n+' noches reservadas</span>')+'</td></tr>'; }); });
-  h+='<div class="card" style="margin-top:14px"><h3 class="tit-card">Presupuesto vs real · noviembre 2026 a diciembre 2027</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Mes</th><th class="num-r">Presupuesto</th><th class="num-r">Reservado</th><th class="num-r">Cumpl.</th><th class="num-r">Ocupación proy. · real</th><th class="num-r">Tarifa prom. proy. · real</th><th>Estado</th></tr>'+filas+
-    '<tr style="background:var(--ink);color:#fff"><td><b>Total 2027</b></td><td class="num-r"><b>'+cop(Y.meta)+'</b></td><td class="num-r">'+cop(Y.real)+'</td><td class="num-r">'+pctS(Y.meta?Y.real/Y.meta:null)+'</td><td colspan="3"></td></tr></table></div>'+
-    '<p class="nota-p" style="margin-top:10px">Valores netos (después de la comisión de Airbnb), comparados con el neto de las reservas de BLÜM OS repartido por las noches de cada mes. El presupuesto se proyecta con el historial de reservas, los costos, los referentes y los eventos, y queda fijo para medir.</p></div>';
+  const v=$('ppProp').value, pares=propsRC().map(os => ({os, rv:revDe(os)})).filter(x => x.rv && (!v || x.os.id===v)), una=pares.length===1;
+  let h='<div class="card" style="padding:14px 18px"><p class="nota-p" style="margin:0">El presupuesto lo calcula BLÜM OS con los <b>costos</b> del inmueble, las <b>tarifas sugeridas</b> de cada noche (referentes, fechas especiales y eventos) y la <b>ocupación esperada</b> (tu historial y la ocupación de los referentes). Se ajusta con el mercado hasta que empieza el mes; ahí queda fijo para medir el cumplimiento con tus reservas.</p></div>';
+  PERIODOS.forEach(P => {
+    const filas=P.ms.map(m => { const xs=pares.map(x=>presMes(x.rv,m)); const S=f=>xs.reduce((a,x)=>a+f(x),0); return { m, xs, n:S(x=>x.n), dias:S(x=>x.dias), bruto:S(x=>x.bruto), neto:S(x=>x.neto), blum:S(x=>x.blum), aseos:S(x=>x.aseos), fijos:S(x=>x.fijos), res:S(x=>x.res), rv:S(x=>x.real.v), rn:S(x=>x.real.n) }; });
+    const T=k=>filas.reduce((a,f)=>a+f[k],0), tN=T('n'), tD=T('dias'), tB=T('bruto');
+    h+='<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><div><h3 class="tit-card" style="margin:0">'+P.t+'</h3><div class="eti" style="text-transform:none;letter-spacing:0;margin-top:3px">'+P.sub+'</div></div></div>'+
+      '<div class="kpis" style="margin:14px 0 6px"><div class="kpi"><div class="eti">Presupuesto de ingresos</div><div class="v">'+cop(tB)+'</div><div class="h">Lo que cobras en Airbnb · neto '+cop(T('neto'))+'</div></div>'+
+      '<div class="kpi"><div class="eti">Ocupación esperada</div><div class="v">'+pctS(tN/tD)+'</div><div class="h">'+Math.round(tN)+' de '+tD+' noches</div></div>'+
+      '<div class="kpi"><div class="eti">Tarifa promedio</div><div class="v">'+cop(tN?tB/tN:0)+'</div><div class="h">Por noche vendida</div></div>'+
+      '<div class="kpi"><div class="eti">Resultado esperado</div><div class="v '+(T('res')>=0?'verde':'terra')+'">'+cop(T('res'))+'</div><div class="h">Neto − comisión BLÜM − aseos − costos fijos</div></div></div>'+
+      '<div class="tabla-wrap"><table class="tabla"><tr><th>Mes</th><th class="num-r">Presupuesto</th><th class="num-r">Ocupación</th><th class="num-r">Tarifa prom.</th><th class="num-r">Neto Airbnb</th><th class="num-r">Costos (fijos + aseos)</th><th class="num-r">Resultado</th><th class="num-r">Ya reservado</th></tr>'+
+      filas.map(f => '<tr><td><b>'+capM(f.m)+'</b></td><td class="num-r"><b>'+cop(f.bruto)+'</b></td><td class="num-r">'+pctS(f.n/f.dias)+'<div class="eti">'+Math.round(f.n)+' noches</div></td><td class="num-r">'+cop(f.n?f.bruto/f.n:0)+'</td><td class="num-r">'+cop(f.neto)+'</td><td class="num-r">'+cop(f.fijos+f.aseos+f.blum)+'<div class="eti">incluye BLÜM '+cop(f.blum)+'</div></td><td class="num-r"><b class="'+(f.res>=0?'verde':'terra')+'">'+cop(f.res)+'</b></td><td class="num-r">'+(f.rn? f.rn+' noches · '+cop(f.rv)+'<div class="eti">'+pctS(f.neto?f.rv/f.neto:null)+' del neto</div>':'<span class="eti">—</span>')+'</td></tr>').join('')+
+      (filas.length>1?'<tr style="background:var(--ink);color:#fff"><td><b>Total '+P.t+'</b></td><td class="num-r"><b>'+cop(tB)+'</b></td><td class="num-r">'+pctS(tN/tD)+'</td><td class="num-r">'+cop(tN?tB/tN:0)+'</td><td class="num-r">'+cop(T('neto'))+'</td><td class="num-r">'+cop(T('fijos')+T('aseos')+T('blum'))+'</td><td class="num-r"><b>'+cop(T('res'))+'</b></td><td class="num-r">'+(T('rn')?cop(T('rv')):'')+'</td></tr>':'')+'</table></div>'+
+      (una? filas.map(f => { const x=f.xs[0]; return '<details style="margin-top:8px"><summary style="cursor:pointer;font-weight:600">Cómo se calculó '+capM(f.m)+'</summary><div class="tabla-wrap" style="margin-top:8px"><table class="tabla"><tr><th>Tipo de noches</th><th class="num-r">Noches del mes</th><th class="num-r">Se esperan vender</th><th class="num-r">Tarifa prom.</th><th class="num-r">Ingreso</th></tr>'+
+        ['sem','fds','esp'].map(k => { const g=x.G[k]; return g.d?'<tr><td>'+g.l+(g.ev&&Object.keys(g.ev).length?'<div class="eti" style="text-transform:none;letter-spacing:0">'+esc(Object.keys(g.ev).join(' · '))+'</div>':'')+'</td><td class="num-r">'+g.d+'</td><td class="num-r">'+Math.round(g.n)+' ('+pctS(g.n/g.d)+')</td><td class="num-r">'+cop(g.n?g.v/g.n:0)+'</td><td class="num-r">'+cop(g.v)+'</td></tr>':''; }).join('')+
+        '</table></div><p class="nota-p" style="margin-top:6px">Neto = ingreso − Airbnb ('+Number(x.G&&pares[0].rv.platformPct)+'%) = '+cop(x.neto)+' · comisión BLÜM '+cop(x.blum)+' · aseos '+cop(x.aseos)+' · costos fijos '+cop(x.fijos)+' → resultado '+cop(x.res)+'.</p></details>'; }).join('') : '')+'</div>';
+  });
   $('ppCuerpo').innerHTML=h;
 }
 
