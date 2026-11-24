@@ -1956,40 +1956,450 @@ return {cargar,limpio,get state(){return state},C,T,TM,rec,ms,track,mult,TIERS,T
 const REV_INI='2026-11', REV_FIN='2027-12', T_KEY='blum_demo_tarifas';
 const EVENTOS_LOCALES=[{"id": "camilo-2026-12-05", "name": "Concierto Camilo · Puerta de Oro", "start": "2026-12-05", "end": "2026-12-05", "scope": "urbano", "impact": 15, "min": 0, "source": "https://tuboleta.com/es/categorias/conciertos", "note": "Tuboleta lo publica el sáb 5 dic; otra boletera dice 4 dic. Verificar."}, {"id": "parada-luz-2026-12-18", "name": "Gran Parada de la Luz", "start": "2026-12-18", "end": "2026-12-18", "scope": "urbano", "impact": 5, "min": 0, "source": "https://eventu.co/", "note": "Catedral y Plaza de La Paz"}, {"id": "last-dance-2026-12-19", "name": "The Last Dance · Estadio Metropolitano", "start": "2026-12-19", "end": "2026-12-19", "scope": "urbano", "impact": 15, "min": 0, "source": "https://www.tuboleta.com/es", "note": "Evento de estadio, sábado 19 dic"}, {"id": "bando-2027", "name": "Lectura del Bando · Carnaval 2027", "start": "2027-01-15", "end": "2027-01-16", "scope": "urbano", "impact": 20, "min": 2, "source": "https://carnavaldebarranquilla.org/carnaval-de-barranquilla-2027/", "note": "Sáb 16 ene, apertura oficial del Carnaval"}, {"id": "precarnaval-fds-2027", "name": "Fin de semana precarnaval", "start": "2027-01-22", "end": "2027-01-23", "scope": "urbano", "impact": 8, "min": 0, "source": "https://hablabarranquillamundo.net/2026/09/01/carnaval-de-barranquilla-2027-ya-tiene-fechas-lectura-del-bando-sera-el-16-de-enero-y-guacherna-el-29/", "note": "Impacto estimado"}, {"id": "guacherna-2027", "name": "Guacherna 2027", "start": "2027-01-29", "end": "2027-01-30", "scope": "urbano", "impact": 20, "min": 2, "source": "https://carnavaldebarranquilla.org/carnaval-de-barranquilla-2027/", "note": "Vie 29 ene; dom 31 ene Desfile del Carnaval de los Niños"}];
 let rev=null, revCarga=null, resPlan=null, resHist=null, osDir=null, aseoSem=0;
-let TAR=null, TAR_SHA=null, MERC=null, INF=null, tarCarga=null;
-const REV_KEY='blum_gh';
-const revCfg=()=>{ try { const g=JSON.parse(lsGet(REV_KEY)||'null'); return g&&g.token ? g : null; } catch(e){ return null; } };
-const revUrl=path=>{ const g=revCfg(); return 'https://api.github.com/repos/'+g.owner+'/'+g.repo+'/contents/'+path; };
-async function ghLeer(path, conSha){
-  const r=await fetch(revUrl(path)+'?ref='+(revCfg().branch||'main'), { headers:{ Authorization:'Bearer '+revCfg().token, Accept: conSha?'application/vnd.github+json':'application/vnd.github.raw+json' }, cache:'no-store' });
-  if (r.status===404) return null; if (r.status===401||r.status===403) throw new Error('La llave de GitHub no es válida o venció. Conéctala de nuevo.');
-  if (!r.ok) throw new Error('GitHub respondió '+r.status); const j=await r.json();
-  return conSha ? { sha:j.sha, data: JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,''))))) } : j;
-}
-async function ghEscribir(path, data, sha, msg){
-  const b64=btoa(unescape(encodeURIComponent(JSON.stringify(data,null,1))));
-  const r=await fetch(revUrl(path), { method:'PUT', headers:{ Authorization:'Bearer '+revCfg().token, Accept:'application/vnd.github+json' }, body: JSON.stringify({ message:msg, content:b64, sha: sha||undefined, branch: revCfg().branch||'main' }) });
-  if (!r.ok) throw new Error(r.status===409||r.status===422 ? 'Se guardó algo al mismo tiempo; intenta de nuevo.' : 'No se pudo guardar ('+r.status+')'); return (await r.json()).content.sha;
-}
-async function cargarTar(forzar){
-  if (TAR && !forzar) return TAR; if (!revCfg()) throw new Error('SIN_REV');
-  if (!tarCarga || forzar) tarCarga=(async()=>{ const [t,m,i]=await Promise.all([ghLeer('data/os-tarifas.json',true), ghLeer('data/os-mercado.json').catch(()=>null), ghLeer('data/os-informe.json').catch(()=>null)]);
-    TAR=(t&&t.data)||{props:{}}; TAR.props=TAR.props||{}; TAR_SHA=t&&t.sha; MERC=m||{}; INF=i||null; return TAR; })();
-  try { return await tarCarga; } finally { tarCarga=null; }
-}
-const datosT=()=>TAR||{props:{}};
-async function guardarT(d, msg){ TAR=d; TAR_SHA=await ghEscribir('data/os-tarifas.json', d, TAR_SHA, msg||'Tarifas BLÜM OS'); }
-function conectarRev(despues){
-  const g=revCfg()||{owner:'BlumGroup',repo:'BLUM-REVENUE-DATA',branch:'main'};
-  modal('Conectar el análisis diario','<p class="nota-p" style="margin-bottom:12px">Los referentes y costos se guardan en el repositorio privado donde Claude deja cada mañana el análisis de mercado. Pega una vez la llave de GitHub (la misma que ya usabas).</p>'+
-    '<div class="grid dos"><div><label>Organización</label><input id="rvO" value="'+esc(g.owner)+'"></div><div><label>Repositorio de datos</label><input id="rvR" value="'+esc(g.repo)+'"></div></div><div style="margin-top:10px"><label>Llave (token) de GitHub</label><input id="rvT" type="password" autocomplete="off" placeholder="github_pat_…"></div>',
-    [{ t:'Cancelar', sec:true, fn:cerrarModal }, { t:'Conectar', fn: () => { const t=$('rvT').value.trim(); if(!t) return toast('Pega la llave',true);
-      lsSet(REV_KEY, JSON.stringify({ owner:$('rvO').value.trim(), repo:$('rvR').value.trim(), branch:'main', token:t })); cerrarModal(); TAR=null; rev=null; despues&&despues(); } }]);
-}
-function avisoRev(cont, e, recargar){
-  if (e.message==='SIN_REV') { cont.innerHTML='<div class="card"><h3 class="tit-card">Conecta el análisis diario</h3><p class="nota-p">Una sola vez: así tus referentes y costos quedan guardados y Claude puede revisar cada mañana precios y disponibilidad de los referentes.</p><button class="btn" id="bRevCon" style="margin-top:12px">Conectar</button></div>'; $('bRevCon').onclick=()=>conectarRev(recargar); }
-  else cont.innerHTML='<div class="vacio">'+esc(e.message)+'</div>';
-}
+let TAR=null, MERC=null;
+/* Demo: todo se guarda en este navegador. Mercado de referentes: última revisión de Claude (muestra). */
+const MERC_DEMO={
+ "actualizado": "2026-11-23",
+ "props": {
+  "prxkpydpfg": {
+   "1303832779839545763": [
+    {
+     "date": "2026-11-23",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-24",
+     "status": "ok",
+     "price": 201000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-25",
+     "status": "ok",
+     "price": 201000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-26",
+     "status": "ok",
+     "price": 217000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-27",
+     "status": "ok",
+     "price": 217000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-28",
+     "status": "ok",
+     "price": 217000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-29",
+     "status": "ok",
+     "price": 210000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-30",
+     "status": "ok",
+     "price": 210000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-01",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-02",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-03",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-04",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-05",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-06",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    }
+   ],
+   "1357248863972334403": [
+    {
+     "date": "2026-11-23",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-24",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-25",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-26",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-27",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-28",
+     "status": "ok",
+     "price": 213000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-29",
+     "status": "ok",
+     "price": 213000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-30",
+     "status": "ok",
+     "price": 223000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-01",
+     "status": "ok",
+     "price": 241000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-02",
+     "status": "ok",
+     "price": 241000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-03",
+     "status": "ok",
+     "price": 283000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-04",
+     "status": "ok",
+     "price": 291000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-05",
+     "status": "ok",
+     "price": 291000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-06",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    }
+   ],
+   "932555342119626549": [
+    {
+     "date": "2026-11-23",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-24",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-25",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-26",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-27",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-28",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-29",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-30",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-01",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-02",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-03",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-04",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-05",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-06",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    }
+   ],
+   "1187921344071309723": [
+    {
+     "date": "2026-11-23",
+     "status": "ok",
+     "price": 249000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-24",
+     "status": "ok",
+     "price": 231000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-25",
+     "status": "ok",
+     "price": 231000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-26",
+     "status": "ok",
+     "price": 256000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-27",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-28",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-29",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-30",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-01",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-02",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-03",
+     "status": "ok",
+     "price": 285000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-04",
+     "status": "ok",
+     "price": 285000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-05",
+     "status": "ok",
+     "price": 285000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-06",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-23"
+    }
+   ],
+   "1350930961990543298": [
+    {
+     "date": "2026-11-23",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-24",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-25",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-26",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-27",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-28",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-29",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-11-30",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-01",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-02",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-03",
+     "status": "ok",
+     "price": 217000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-04",
+     "status": "ok",
+     "price": 217000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-05",
+     "status": "ok",
+     "price": 217000,
+     "checked": "2026-11-23"
+    },
+    {
+     "date": "2026-12-06",
+     "status": "ok",
+     "price": 213000,
+     "checked": "2026-11-23"
+    }
+   ]
+  }
+ }
+};
+const TAR_INICIAL={"actualizado": "2026-11-24", "props": {"prxkpydpfg": {"nombre": "Firenze", "arriendo": 1025000, "otros": 1375000, "aseo": 60000, "limpieza": 0, "gastoNoche": 0, "airbnbPct": 16, "blumPct": null, "zona": "urbano", "refs": [{"link": "https://www.airbnb.com.co/rooms/1303832779839545763"}, {"link": "https://www.airbnb.com.co/rooms/1357248863972334403"}, {"link": "https://www.airbnb.com.co/rooms/932555342119626549"}, {"link": "https://www.airbnb.com.co/rooms/1187921344071309723"}, {"link": "https://www.airbnb.com.co/rooms/1350930961990543298"}], "plan": {}}}};
+function cargarTar(){ if (TAR) return TAR; try { TAR=JSON.parse(localStorage.getItem(T_KEY)||'null'); } catch(e){} if (!TAR||!TAR.props) TAR=JSON.parse(JSON.stringify(TAR_INICIAL)); MERC=MERC_DEMO; return TAR; }
+const datosT=()=>cargarTar();
+async function guardarT(d){ TAR=d; try { localStorage.setItem(T_KEY, JSON.stringify(d)); } catch(e){ throw new Error('No se pudo guardar en este navegador'); } }
+function avisoRev(cont, e){ cont.innerHTML='<div class="vacio">'+esc(e.message)+'</div>'; }
 const confirmarSimple=t=>{ try { return window.confirm(t); } catch(e){ return true; } };
 const fracPct=v=>{ if (v===''||v==null) return null; let n=parseFloat(String(v).replace('%','').replace(',','.')); if (!isFinite(n)) return null; return n>1?n/100:n; };
 const pesos=v=>Number(String(v==null?'':v).replace(/[^\d]/g,''))||0;
@@ -2033,7 +2443,7 @@ function propEngine(os, cfg, cb, H){
 async function cargarRev(forzar){
   if (rev && !forzar) return rev;
   if (!revCarga || forzar) revCarga = (async () => {
-    await Promise.all([reservasPlan(forzar), directorioT(forzar), cargarTar(forzar)]);
+    await Promise.all([reservasPlan(forzar), directorioT(forzar)]); cargarTar();
     const d=datosT(), lista=propsRC().filter(os => d.props[os.id]);
     const metas={}, st={ version:3, properties: lista.map(os => { const cfg=d.props[os.id], cb=costosBase(os), H=historial(os, fechaIni(os)); const p=propEngine(os,cfg,cb,H); metas[os.id]={cfg,cb,H}; return p; }) };
     let S=RV.cargar(st, null, { items:EVENTOS_LOCALES }, resPlan, {});
@@ -2044,7 +2454,7 @@ async function cargarRev(forzar){
     S=RV.cargar(st, null, { items:EVENTOS_LOCALES }, resPlan, {});
     let cambio=false; S.properties.forEach(sp => { const o=st.properties.find(x=>x.id===sp.id), m=metas[sp.id]; sp.hist=Object.assign({},m.H,{adr:o._histAdr}); sp.baseOrigen=o._origen; sp.refMed=o._refMed; sp.refLinks=o._refLinks;
       const cfg=d.props[sp.id]; cfg.plan=cfg.plan||{}; for (const k in sp.plan) if (!cfg.plan[k] && k>=RV.TM) { cfg.plan[k]=sp.plan[k]; cambio=true; } sp.planAt=Object.values(cfg.plan).map(v=>v.at).filter(Boolean).sort().pop(); });
-    if (cambio) await guardarT(d, 'Presupuesto proyectado (BLÜM OS)').catch(()=>{});
+    if (cambio) await guardarT(d).catch(()=>{});
     rev={ S }; return rev; })();
   try { return await revCarga; } finally { revCarga=null; }
 }
@@ -2101,15 +2511,26 @@ function tablaRefs(p){
   return '<div class="card" style="margin-bottom:14px"><h3 class="tit-card">Mercado · tus 5 referentes (próximos 14 días)</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Referente</th><th class="num-r">Ocupadas</th><th class="num-r">Precio por noche</th><th class="num-r">Revisado</th></tr>'+cs.map(fila).join('')+'</table></div><p class="nota-p" style="margin-top:8px">Precio = lo que paga el huésped por noche en una estadía de 2 noches. Cada día tu tarifa se ajusta hasta ±15% hacia lo que cobran ellos esa fecha (+8% si la mayoría está llena) y nunca baja de tu punto de equilibrio.</p></div>';
 }
 function informeHtml(p){
-  const ri=INF&&INF.props&&INF.props[p.osId]; if (!ri) return '';
-  return '<div class="card" style="margin-bottom:14px"><h3 class="tit-card">Pricing de hoy · '+esc(fechaLarga(INF.date||hoy()))+'</h3><p style="font-size:.95rem;line-height:1.55">'+esc(ri.resumen||'')+'</p>'+
-    (Array.isArray(ri.acciones)? ri.acciones.map((x,i)=>'<div class="hist"><b>'+(i+1)+'. '+esc(x.titulo||'')+'</b><div>'+esc(x.detalle||'')+'</div></div>').join(''):'')+
-    (Array.isArray(ri.alertas)&&ri.alertas.length?'<div class="nota-p" style="margin-top:8px">'+ri.alertas.map(esc).join('<br>')+'</div>':'')+'</div>';
+  const a=p.auto||{}, d14=Array.from({length:14},(_,i)=>RV.addDays(RV.T,i)), libres=d14.filter(d=>!RV.occ(p,d)), r0=RV.rec(p,RV.T);
+  let ck=0, un=0; d14.forEach(d=>{ const r=RV.rec(p,d); ck+=r.mk.checked||0; un+=r.mk.un||0; }); const dem=ck?un/ck:null;
+  const mHoy=hoy().slice(0,7), pn=planNeto(p,mHoy), re=realMes(p.osId,mHoy), falta=pn?Math.max(0,pn.meta-re.v):0;
+  const fuertes=libres.map(d=>RV.rec(p,d)).filter(r=>r.t!=='sem'||(r.mk.checked>=3&&r.mk.un/r.mk.checked>=.6)).slice(0,4);
+  const flojas=libres.map(d=>RV.rec(p,d)).filter(r=>r.t==='sem'&&r.cl==='min').slice(0,4);
+  const acc=[];
+  if (fuertes.length) acc.push(['Fechas fuertes: publica estas tarifas', fuertes.map(r=>fechaLarga(r.d)+' '+cop(r.price)+(r.mk.rate?' (referentes '+cop(r.mk.rate)+', '+r.mk.un+'/'+r.mk.checked+' ocupados)':'')).join(' · ')]);
+  if (flojas.length) acc.push(['Noches en tu mínimo', flojas.map(r=>fechaLarga(r.d)).join(', ')+': quedan en '+cop(a.floor)+' (equilibrio). Si no se venden, ofrece estadía mínima de 1 noche, no bajes el precio.']);
+  if (pn && falta>0) acc.push(['Presupuesto del mes', 'Te faltan '+cop(falta)+' netos; quedan '+libres.filter(d=>d.slice(0,7)===mHoy).length+' noches libres este mes.']);
+  if (a.mkt && a.mkt<a.floor) acc.push(['El mercado está por debajo de tu equilibrio', 'Los referentes cobran '+cop(a.mkt)+' entre semana y tu mínimo es '+cop(a.floor)+'. Compite con estadía mínima, fotos y reseñas, no con precio.']);
+  return '<div class="card" style="margin-bottom:14px"><h3 class="tit-card">Pricing de hoy · '+esc(fechaLarga(hoy()))+'</h3><p style="font-size:.95rem;line-height:1.55">'+
+    (RV.occ(p,RV.T)?'Hoy está reservada. ':'Publica hoy <b>'+cop(r0.price)+'</b> ('+esc(RV.TN[r0.t])+'). ')+
+    (dem!=null?'Tus referentes tienen ocupado el <b>'+pctS(dem)+'</b> de las próximas 2 semanas'+(a.mkt?' y cobran ~'+cop(a.mkt)+' entre semana'+(a.mktWe?' y '+cop(a.mktWe)+' el fin de semana':''):'')+'. ':'Aún no hay análisis de los referentes. ')+
+    (pn?'Este mes llevas '+cop(re.v)+' de '+cop(pn.meta)+' netos ('+pctS(pn.meta?re.v/pn.meta:null)+').':'')+'</p>'+
+    acc.map((x,i)=>'<div class="hist"><b>'+(i+1)+'. '+esc(x[0])+'</b><div>'+esc(x[1])+'</div></div>').join('')+'</div>';
 }
 
 /* ───── Referentes y costos (en Propiedades y en Proyecciones) ───── */
 async function editarInmueble(os){
-  try { await Promise.all([directorioT(), cargarTar()]); } catch(e){ if (e.message==='SIN_REV') return conectarRev(()=>editarInmueble(os)); return toast(e.message,true); }
+  try { await directorioT(); cargarTar(); } catch(e){ return toast(e.message,true); }
   const d=datosT(), c=d.props[os.id]||{}, cb=costosBase(os), v=x=>x==null?'':x;
   const n=(l,k,ph,h)=>'<div><label>'+l+'</label><input data-k="'+k+'" inputmode="numeric" value="'+esc(v(c[k]))+'" placeholder="'+(ph||'0')+'">'+(h?'<div class="eti" style="text-transform:none;letter-spacing:0;margin-top:3px">'+h+'</div>':'')+'</div>';
   const refs=Array.from({length:5},(_,i)=>(c.refs||[])[i]||{});
@@ -2120,7 +2541,7 @@ async function editarInmueble(os){
     '<h3 class="tit-card" style="margin-top:14px">Por reserva y comisiones</h3><div class="grid dos" style="gap:10px">'+n('Aseo por cada salida','aseo','60000')+n('Limpieza que cobras al huésped','limpieza','0','0 si no cobras')+n('Gasto por noche ocupada','gastoNoche','0','Amenities, energía extra')+n('Comisión Airbnb %','airbnbPct','15,5')+n('Comisión BLÜM %','blumPct', cb.blum!=null? String(Math.round(cb.blum*1000)/10).replace('.',',') : '15','Del contrato vigente si lo dejas vacío')+
     '<div><label>Ubicación</label><select data-k="zona"><option value="urbano">Ciudad</option><option value="playa"'+(c.zona==='playa'?' selected':'')+'>Playa</option></select></div></div>'+
     '<h3 class="tit-card" style="margin-top:14px">5 referentes (anuncios parecidos de la zona)</h3>'+refs.map((r,i)=>'<input data-rl="'+i+'" value="'+esc(r.link||'')+'" placeholder="https://www.airbnb.com.co/rooms/… · referente '+(i+1)+'" style="margin-top:6px">').join('')+
-    '<div class="eti" style="text-transform:none;letter-spacing:0;margin-top:4px">Cada mañana Claude revisa en estos anuncios qué noches están ocupadas y a qué precio, y con eso ajusta tus tarifas sin bajar del punto de equilibrio.</div>'+
+    '<div class="eti" style="text-transform:none;letter-spacing:0;margin-top:4px">Con estos anuncios se analiza qué noches tienen ocupadas y a qué precio, y con eso se ajustan tus tarifas sin bajar del punto de equilibrio.</div>'+
     '<h3 class="tit-card" style="margin-top:14px">Multiplicadores (vacío = automático)</h3><div class="grid dos" style="gap:10px">'+[['tFds','Fin de semana','×1,25'],['tEsp','Puentes y festivos','×1,5'],['tEvt','Eventos','×2'],['tTop','Fechas top (Carnaval, 30–31 dic)','×3']].map(x=>'<div><label>'+x[1]+'</label><input data-k="'+x[0]+'" value="'+esc(v(c[x[0]]))+'" placeholder="'+x[2]+'"></div>').join('')+'</div>';
   const m=modal('Referentes y costos · '+os.nombre, cuerpo, [{ t:'Cancelar', sec:true, fn:cerrarModal }, { t:'Guardar', fn: async b => {
     const dd=JSON.parse(JSON.stringify(datosT())), nc=Object.assign({}, dd.props[os.id]||{}), dec=x=>{ const y=parseFloat(String(x).replace(',','.')); return isFinite(y)?y:null; };
@@ -2145,7 +2566,7 @@ abrirFichaPropiedad = function(id){
   s.innerHTML='<h3>Tarifas y presupuesto <button class="btn sec chico" type="button" id="fpTar">'+(c?'Editar':'＋ Completar')+'</button></h3>'+(c?'<div class="sub">'+((c.refs||[]).filter(r=>r.link).length)+' de 5 referentes · arriendo '+cop(c.arriendo||0)+' · aseo '+cop(c.aseo||0)+'</div>':'<div class="vacio">Faltan los costos fijos y los 5 referentes para calcular tarifas y presupuesto</div>');
   s.querySelector('#fpTar').onclick=()=>editarInmueble(os); };
   pie ? pie.parentNode.insertBefore(s, pie) : m.querySelector('.caja').appendChild(s); pintar();
-  if (!TAR && revCfg()) cargarTar().then(pintar).catch(()=>{});
+
 };
 /* ───── Presupuestos ───── */
 async function cargarPpto(forzar){
@@ -2191,7 +2612,7 @@ function pintarProy(){
     '<div class="kpis"><div class="kpi"><div class="eti">Punto de equilibrio</div><div class="v">'+cop(a.floor)+'</div><div class="h">Tarifa mínima por noche: cubre costos fijos, aseo y comisiones al 70% de ocupación</div></div>'+
     '<div class="kpi"><div class="eti">Tarifa base (entre semana)</div><div class="v">'+cop(base)+'</div><div class="h">'+esc(p.baseOrigen||'')+'</div></div>'+
     '<div class="kpi"><div class="eti">Tu historial</div><div class="v">'+(H.occ!=null?pctS(H.occ):'—')+'</div><div class="h">'+(H.n?'Ocupación · '+H.n+' noches vendidas desde '+esc(fechaLarga(H.desde))+' · tarifa prom. ≈ '+cop(H.adr):'Aún sin reservas registradas')+'</div></div>'+
-    '<div class="kpi"><div class="eti">Referentes · entre semana / fin de semana</div><div class="v">'+(a.mkt?cop(a.mkt):'—')+'</div><div class="h">'+(a.mktWe?'Fin de semana '+cop(a.mktWe)+' · ':'')+(p.refLinks? p.refLinks+' de 5 referentes'+(ultRev(p)?' · revisados '+esc(fechaLarga(ultRev(p))):' · Claude los revisa mañana a las 8:23') : 'Agrega los 5 referentes')+'</div></div></div>'+tablaRefs(p)+informeHtml(p);
+    '<div class="kpi"><div class="eti">Referentes · entre semana / fin de semana</div><div class="v">'+(a.mkt?cop(a.mkt):'—')+'</div><div class="h">'+(a.mktWe?'Fin de semana '+cop(a.mktWe)+' · ':'')+(p.refLinks? p.refLinks+' de 5 referentes'+(ultRev(p)?' · revisados '+esc(fechaLarga(ultRev(p))):' · pendientes de análisis') : 'Agrega los 5 referentes')+'</div></div></div>'+tablaRefs(p)+informeHtml(p);
   h+='<div class="card"><h3 class="tit-card">Tarifas sugeridas por tipo de día</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Tipo de día</th><th class="num-r">Multiplicador</th><th class="num-r">Tarifa sugerida</th></tr>'+
     RV.TIERS.map(([k,l]) => { const M=RV.mult(p,k); return '<tr><td><b>'+l+'</b><div class="eti" style="text-transform:none;letter-spacing:0">'+RV.TDESC[k]+'</div></td><td class="num-r">'+(k==='sem'?'base':'×'+RV.fx(M))+'</td><td class="num-r"><b>'+cop(Math.max(RV.rp(base*M),min))+'</b></td></tr>'; }).join('')+'</table></div></div>';
   const dias=Array.from({length:14},(_,i)=>RV.addDays(RV.T,i));
