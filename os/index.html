@@ -1894,7 +1894,7 @@ function pace(p,d,lead){if(!p.paceOn||lead<0||lead>45||!(p.stays||[]).some(x=>x.
 function rec(p,d){return cached('r'+p.id+d,()=>{const lead=diff(T,d),F=[];const {t,ev}=tierOf(p,d),M=mult(p,t);let x=num(p.base)*M;
  F.push({l:TN[t]+(M!==1?' ×'+fx(M):'')+(ev&&t!=='sem'&&t!=='fds'?' · '+ev.name:''),m:M,k:'d'});const nominal=x;
  const mk=market(p,d);if(mk.rate&&!(mk.sim&&t!=='sem'&&t!=='fds')){mk.cmp=Math.max(0,mk.rate-gv(p));const wt=num(p.compWeight,50)/100*(mk.sim?.5:1),f=clamp(1+wt*(mk.cmp/x-1),.85,1.15);if(Math.abs(f-1)>=.01){F.push({l:`Referentes${mk.sim?' (días similares)':''} cobran ${money(mk.rate)}`,m:f,k:'m'});x*=f}}
- if(mk.checked>=3&&mk.un/mk.checked>=.6){F.push({l:`${mk.un} de ${mk.checked} referentes llenos`,m:1.08,k:'m'});x*=1.08}
+ if(t==='fds'&&x<num(p.base)*mult(p,'fds')*.95){x=Math.max(x,num(p.base));}if(mk.checked>=3&&mk.un/mk.checked>=.6){F.push({l:`${mk.un} de ${mk.checked} referentes llenos`,m:1.08,k:'m'});x*=1.08}
  let ms=Math.max(1,num(p.minStay,1),ev?.min||0);if(lead>=0&&lead<=3&&!ev?.min)ms=1;
  let price=Math.max(rp(x),num(p.min));if(num(p.manMax))price=Math.min(price,num(p.manMax));const cl=rp(x)<num(p.min)?'min':'';const ov=p.overrides[d];if(ov){if(ov.price)price=num(ov.price);if(ov.minStay)ms=num(ov.minStay)}
  return {d,lead,price,cl,t,M,guest:price+gv(p),raw:x,nominal,fair:Math.max(rp(nominal),num(p.min)),F,ms,ev,g:0,ov:!!ov,mk}})}
@@ -3407,6 +3407,112 @@ async function cargarAseos(){
 function cargarAseosKpi(items, ok){ const k=$('asHechos'); if (k) k.textContent=items.filter(x=>ok[x.k]).length+' de '+items.length+' hechos'; $('asCuerpo').querySelectorAll('[data-as]').forEach(c=>c.closest('.as-item').classList.toggle('ok',c.checked)); }
 
 (function(){ const b=document.querySelector('.marca'); const t=document.createElement('div'); t.textContent='DEMO · tarifas y presupuesto'; t.style.cssText='margin:6px 22px 0;font-size:.62rem;letter-spacing:.14em;color:#B08968;font-weight:600'; if(b) b.appendChild(t); })();
+
+/* ═════════ Estructura final: Pricing (día a día) · Proyecciones (horizonte móvil) · Presupuestos (meta fija vs real) ═════════ */
+const UMBRAL_CAMBIO=0.05;   // avisar cambios de tarifa de 5% o más
+function horizonte(){ // meses restantes del trimestre en curso + el trimestre siguiente
+  const m=RV.TM, q=Math.floor((+m.slice(5)-1)/3), y=+m.slice(0,4), fin=y+'-'+String(q*3+3).padStart(2,'0');
+  const qs=q===3?{y:y+1,q:0}:{y,q:q+1}, ini2=qs.y+'-'+String(qs.q*3+1).padStart(2,'0'), out=[];
+  const resto=[]; for (let x=RV.addMonths(m,1); x<=fin; x=RV.addMonths(x,1)) resto.push(x);
+  if (resto.length) out.push({ t: resto.length===1 ? capM(resto[0])+' '+resto[0].slice(0,4) : 'Resto del Q'+(q+1)+' '+y, sub:'Cierre del trimestre en curso', ms:resto });
+  out.push({ t:'Q'+(qs.q+1)+' '+qs.y, sub:[0,1,2].map(i=>capM(RV.addMonths(ini2,i))).join(', ')+(qs.q===0?' · incluye Carnaval':''), ms:[0,1,2].map(i=>RV.addMonths(ini2,i)) });
+  return out;
+}
+/* tarifas por rangos para cargar en el calendario de Airbnb */
+function rangosTarifa(p, desde, hasta){
+  const out=[]; let cur=null;
+  for (let d=desde; d<=hasta; d=RV.addDays(d,1)) { if (RV.occ(p,d)) { cur=null; continue; } const r=RV.rec(p,d);
+    if (cur && cur.price===r.price && cur.ms===r.ms) { cur.hasta=d; } else { cur={ desde:d, hasta:d, price:r.price, ms:r.ms, t:r.t, ev:r.ev&&r.t!=='sem'&&r.t!=='fds'?r.ev.name:'' }; out.push(cur); } }
+  return out;
+}
+const publicadas=()=>{ try { return JSON.parse(localStorage.getItem('blum_publicadas')||'{}'); } catch(e){ return {}; } };
+function cambiosAirbnb(p){
+  const pub=publicadas()[p.osId]||null, fin=RV.addDays(RV.T,89), cambios=[];
+  for (let d=RV.T; d<=fin; d=RV.addDays(d,1)) { if (RV.occ(p,d)) continue; const r=RV.rec(p,d), a=pub&&pub.tarifas[d];
+    if (!a || Math.abs(r.price/a-1)>=UMBRAL_CAMBIO) cambios.push({ d, antes:a||null, ahora:r.price, ms:r.ms, r }); }
+  return { pub, cambios };
+}
+function marcarPublicado(p){
+  const all=publicadas(), t={}, fin=RV.addDays(RV.T,89); for (let d=RV.T; d<=fin; d=RV.addDays(d,1)) if (!RV.occ(p,d)) t[d]=RV.rec(p,d).price;
+  all[p.osId]={ fecha:RV.T, tarifas:t }; try { localStorage.setItem('blum_publicadas', JSON.stringify(all)); } catch(e){}
+}
+function textoRangos(rs){ const f=d=>{ const x=pISO(d); return x.getDate()+' '+MESL[x.getMonth()].slice(0,3); }; return rs.map(x=>(x.desde===x.hasta?f(x.desde):f(x.desde)+'–'+f(x.hasta))+': '+cop(x.ahora||x.price)+(x.ms>1?' · mín. '+x.ms+' noches':'')).join('\n'); }
+function agrupar(cambios){ const out=[]; let c=null; cambios.forEach(x=>{ if (c && RV.addDays(c.hasta,1)===x.d && c.ahora===x.ahora && c.ms===x.ms) c.hasta=x.d; else { c={ desde:x.d, hasta:x.d, ahora:x.ahora, antes:x.antes, ms:x.ms }; out.push(c); } }); return out; }
+/* movimientos de los referentes entre la última revisión y la anterior */
+function movimientosMercado(p){
+  const evs=[]; let rev=null, ant=null;
+  p.competitors.forEach(c=>{ const fechas=[...new Set(c.obs.map(o=>o.checked))].sort(); if (fechas.length<2) return; const u=fechas[fechas.length-1], a=fechas[fechas.length-2]; rev=u; ant=a;
+    const U={}, A={}; c.obs.forEach(o=>{ if (o.checked===u) U[o.date]=o; if (o.checked===a) A[o.date]=o; });
+    let ocup=0, libero=0, sube=0, baja=0; Object.keys(U).forEach(d=>{ const x=U[d], y=A[d]; if (!y||d<RV.T) return; if (x.status==='x'&&y.status!=='x') ocup++; else if (x.status!=='x'&&y.status==='x') libero++; else if (x.price&&y.price){ if (x.price>y.price*1.03) sube++; else if (x.price<y.price*0.97) baja++; } });
+    if (ocup||libero||sube||baja) evs.push(c.name+': '+[ocup?ocup+' noches se ocuparon':'', libero?libero+' se liberaron':'', sube?'subió precio en '+sube+' noches':'', baja?'bajó precio en '+baja+' noches':''].filter(Boolean).join(', ')); });
+  return { rev, ant, evs };
+}
+
+/* ───── Pricing ───── */
+function pintarPricing(){
+  const os=propsRC().find(p => p.id===$('prProp').value); if (!os) return; const p=revDe(os);
+  if (!p) { $('prCuerpo').innerHTML='<div class="card"><h3 class="tit-card">'+esc(os.nombre)+' aún no tiene referentes ni costos</h3><p class="nota-p">Agrega los costos fijos y los 5 referentes del mercado. Con eso se calcula el pricing de los próximos 3 meses, sin bajar de tus costos.</p><button class="btn" id="prCfg" style="margin-top:12px">Agregar referentes y costos</button></div>'; $('prCfg').onclick=()=>editarInmueble(os); return; }
+  const a=p.auto||{}, base=Number(p.base)||0, min=Number(p.min)||0, meses=[RV.TM, RV.addMonths(RV.TM,1), RV.addMonths(RV.TM,2), RV.addMonths(RV.TM,3)]; if (!prMes||meses.indexOf(prMes)<0) prMes=(diasMes(RV.TM)-(+RV.T.slice(8))<10)?meses[1]:meses[0];
+  const C=cambiosAirbnb(p), G=agrupar(C.cambios), M=movimientosMercado(p), S=seguimiento(p);
+  let h='<div style="display:flex;justify-content:flex-end;margin:-6px 0 10px"><button class="btn sec chico" id="prCfg" type="button">Referentes y costos</button></div>'+
+    '<div class="kpis"><div class="kpi"><div class="eti">Punto de equilibrio</div><div class="v">'+cop(a.floor)+'</div><div class="h">Ninguna tarifa baja de aquí</div></div>'+
+    '<div class="kpi"><div class="eti">Tarifa base (entre semana)</div><div class="v">'+cop(base)+'</div><div class="h">'+esc(p.baseOrigen||'')+'</div></div>'+
+    '<div class="kpi"><div class="eti">Mercado · 30 días</div><div class="v">'+pctS(ocupMercado(p,30))+'</div><div class="h">Referentes ocupados · precio '+(a.mkt?cop(a.mkt):'—')+' entre semana'+(a.mktWe?' / '+cop(a.mktWe)+' fin de semana':'')+'</div></div>'+
+    '<div class="kpi"><div class="eti">Presupuesto del mes</div><div class="v">'+pctS(S.cum)+'</div><div class="h"><span class="chip '+S.est[1]+'">'+S.est[0]+'</span> · cierre proyectado '+cop(S.cierre)+'</div></div></div>';
+  // 1. Decisiones de hoy
+  h+='<div class="card"><h3 class="tit-card">1 · Decisiones de hoy</h3>'+S.acc.map((x,i)=>'<div class="hist"><b>'+(i+1)+'. '+esc(x[0])+'</b><div>'+esc(x[1])+'</div></div>').join('')+
+    '<div class="nota-p" style="margin-top:10px"><b>Movimientos del mercado</b>'+(M.evs.length?' (revisión del '+esc(fechaLarga(M.rev))+' frente a la del '+esc(fechaLarga(M.ant))+'):<br>'+M.evs.map(esc).join('<br>'):': '+(ultRev(p)?'primera revisión del '+esc(fechaLarga(ultRev(p)))+'; los cambios (se ocupó, se liberó, subió o bajó precio) aparecen desde la siguiente revisión.':'aún sin revisión de referentes.'))+'</div></div>';
+  // 2. Cambios para cargar en Airbnb
+  h+='<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3 class="tit-card" style="margin:0">2 · Carga en Airbnb · próximos 90 días</h3><div style="display:flex;gap:8px"><button class="btn sec chico" type="button" id="prCopy">Copiar</button><button class="btn chico" type="button" id="prPub">Ya los cargué en Airbnb</button></div></div>'+
+    '<p class="nota-p" style="margin:6px 0 10px">'+(C.pub? 'Desde tu última carga ('+esc(fechaLarga(C.pub.fecha))+') cambiaron <b>'+C.cambios.length+' noches</b> en 5% o más. Solo actualiza estas:' : 'Primera carga: estas son las tarifas por rangos de fechas para los próximos 90 días. Cárgalas en el calendario de Airbnb y presiona "Ya los cargué".')+'</p>'+
+    (G.length? '<div class="tabla-wrap"><table class="tabla"><tr><th>Fechas</th><th class="num-r">Tarifa</th><th class="num-r">Antes</th><th class="num-r">Mín. noches</th></tr>'+G.slice(0,40).map(x=>'<tr><td><b>'+esc(x.desde===x.hasta?fechaLarga(x.desde):fechaLarga(x.desde)+' → '+fechaLarga(x.hasta))+'</b></td><td class="num-r"><b>'+cop(x.ahora)+'</b></td><td class="num-r">'+(x.antes?cop(x.antes)+' <span class="eti">'+(x.ahora>x.antes?'▲':'▼')+'</span>':'—')+'</td><td class="num-r">'+x.ms+'</td></tr>').join('')+'</table></div>'+(G.length>40?'<p class="nota-p">… y '+(G.length-40)+' rangos más (usa Copiar).</p>':'') : '<div class="vacio">Sin cambios: tu calendario de Airbnb está al día.</div>')+'</div>';
+  // 3. Calendario
+  h+='<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3 class="tit-card" style="margin:0">3 · Calendario de tarifas</h3><div class="seg">'+meses.map(m=>'<button type="button" data-prm="'+m+'" class="'+(m===prMes?'on':'')+'">'+capM(m)+'</button>').join('')+'</div></div>'+
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 8px">'+RV.TIERS.map(([k,l])=>'<span class="eti" style="text-transform:none;letter-spacing:0;display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;background:'+TCOL[k]+';border:1px solid var(--line)"></span>'+l+'</span>').join('')+'</div>'+
+    calendarioTarifas(p, prMes)+'</div>';
+  // 4. Cómo se arma + referentes
+  h+='<div class="card" style="margin-top:14px"><h3 class="tit-card">4 · Cómo se arma tu tarifa</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Tipo de día</th><th class="num-r">Multiplicador</th><th class="num-r">Tarifa</th></tr>'+
+    RV.TIERS.map(([k,l]) => { const Mx=RV.mult(p,k); return '<tr><td><b>'+l+'</b><div class="eti" style="text-transform:none;letter-spacing:0">'+RV.TDESC[k]+'</div></td><td class="num-r">'+(k==='sem'?'base':'×'+RV.fx(Mx))+'</td><td class="num-r"><b>'+cop(Math.max(RV.rp(base*Mx),min))+'</b></td></tr>'; }).join('')+
+    '</table></div><p class="nota-p" style="margin-top:8px">Cada noche: tarifa del tipo de día → se acerca hasta ±15% a lo que cobran tus referentes esa fecha → +8% si 3 o más de ellos están ocupados → nunca por debajo del punto de equilibrio. A 3 días o menos: estadía mínima 1 noche.</p></div>'+tablaRefs(p);
+  $('prCuerpo').innerHTML=h; $('prCfg').onclick=()=>editarInmueble(os);
+  $('prCuerpo').querySelectorAll('[data-prm]').forEach(b=>b.onclick=()=>{ prMes=b.dataset.prm; pintarPricing(); });
+  $('prPub').onclick=()=>{ marcarPublicado(p); toast('Listo: desde hoy solo verás los cambios'); pintarPricing(); };
+  $('prCopy').onclick=()=>{ const t='Tarifas '+os.nombre+'\n'+textoRangos(G); (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('Copiado'),()=>modal('Copiar','<textarea style="width:100%;height:300px">'+esc(t)+'</textarea>',[{t:'Cerrar',fn:cerrarModal}])); };
+}
+
+/* ───── Proyecciones: horizonte móvil (resto del trimestre + siguiente) ───── */
+function tarjetaPeriodo(P, pares, una){
+  const filas=P.ms.map(m => { const xs=pares.map(x=>presMes(x.rv,m)); const Sx=f=>xs.reduce((a,x)=>a+f(x),0); return { m, xs, n:Sx(x=>x.n), dias:Sx(x=>x.dias), bruto:Sx(x=>x.bruto), neto:Sx(x=>x.neto), blum:Sx(x=>x.blum), aseos:Sx(x=>x.aseos), fijos:Sx(x=>x.fijos), res:Sx(x=>x.res), rv:Sx(x=>x.real.v), rn:Sx(x=>x.real.n),
+    wk: una?(xs[0].G.sem.n?xs[0].G.sem.v/xs[0].G.sem.n:0):0, we: una?(xs[0].G.fds.n?xs[0].G.fds.v/xs[0].G.fds.n:0):0, sp: una?(xs[0].G.esp.n?xs[0].G.esp.v/xs[0].G.esp.n:0):0 }; });
+  const T=k=>filas.reduce((a,f)=>a+f[k],0), tN=T('n'), tD=T('dias'), tB=T('bruto');
+  return '<div class="card" style="margin-top:14px"><h3 class="tit-card" style="margin:0">'+P.t+'</h3><div class="eti" style="text-transform:none;letter-spacing:0;margin-top:3px">'+P.sub+'</div>'+
+    '<div class="kpis" style="margin:14px 0 6px"><div class="kpi"><div class="eti">Ingresos proyectados</div><div class="v">'+cop(tB)+'</div><div class="h">Neto Airbnb '+cop(T('neto'))+'</div></div><div class="kpi"><div class="eti">Ocupación</div><div class="v">'+pctS(tN/tD)+'</div><div class="h">'+Math.round(tN)+' de '+tD+' noches · piso 70%</div></div><div class="kpi"><div class="eti">Tarifa promedio</div><div class="v">'+cop(tN?tB/tN:0)+'</div><div class="h">Por noche vendida</div></div><div class="kpi"><div class="eti">Resultado</div><div class="v '+(T('res')>=0?'verde':'terra')+'">'+cop(T('res'))+'</div><div class="h">Después de Airbnb, BLÜM, aseos y costos fijos</div></div></div>'+
+    '<div class="tabla-wrap"><table class="tabla"><tr><th>Mes</th><th class="num-r">Ingresos</th><th class="num-r">Ocupación</th>'+(una?'<th class="num-r">Entre semana</th><th class="num-r">Fin de semana</th><th class="num-r">Fechas especiales</th>':'')+'<th class="num-r">Tarifa prom.</th><th class="num-r">Resultado</th><th class="num-r">Ya reservado</th></tr>'+
+    filas.map(f=>'<tr><td><b>'+capM(f.m)+'</b></td><td class="num-r"><b>'+cop(f.bruto)+'</b></td><td class="num-r">'+pctS(f.n/f.dias)+'<div class="eti">'+Math.round(f.n)+' noches</div></td>'+(una?'<td class="num-r">'+cop(f.wk)+'</td><td class="num-r">'+cop(f.we)+'</td><td class="num-r">'+(f.sp?cop(f.sp):'—')+'</td>':'')+'<td class="num-r">'+cop(f.n?f.bruto/f.n:0)+'</td><td class="num-r"><b class="'+(f.res>=0?'verde':'terra')+'">'+cop(f.res)+'</b></td><td class="num-r">'+(f.rn?f.rn+' noches · '+cop(f.rv):'<span class="eti">—</span>')+'</td></tr>').join('')+'</table></div>'+
+    (una? filas.map(f => { const x=f.xs[0]; return '<details style="margin-top:8px"><summary style="cursor:pointer;font-weight:600">Cómo se calculó '+capM(f.m)+'</summary><div class="tabla-wrap" style="margin-top:8px"><table class="tabla"><tr><th>Tipo de noches</th><th class="num-r">Noches del mes</th><th class="num-r">Se esperan vender</th><th class="num-r">Tarifa prom.</th><th class="num-r">Ingreso</th></tr>'+
+        ['sem','fds','esp'].map(k => { const g=x.G[k]; return g.d?'<tr><td>'+g.l+(g.ev&&Object.keys(g.ev).length?'<div class="eti" style="text-transform:none;letter-spacing:0">'+esc(Object.keys(g.ev).join(' · '))+'</div>':'')+'</td><td class="num-r">'+g.d+'</td><td class="num-r">'+Math.round(g.n)+' ('+pctS(g.n/g.d)+')</td><td class="num-r">'+cop(g.n?g.v/g.n:0)+'</td><td class="num-r">'+cop(g.v)+'</td></tr>':''; }).join('')+
+        '</table></div><p class="nota-p" style="margin-top:6px">Neto '+cop(x.neto)+' − BLÜM '+cop(x.blum)+' − aseos '+cop(x.aseos)+' − costos fijos '+cop(x.fijos)+' = resultado '+cop(x.res)+'.</p></details>'; }).join('') : '')+'</div>';
+}
+function pintarProy(){
+  const os=propsRC().find(p => p.id===$('pyProp').value); if (!os) return; const p=revDe(os);
+  if (!p) { $('pyCuerpo').innerHTML='<div class="card"><h3 class="tit-card">'+esc(os.nombre)+' aún no tiene referentes ni costos</h3><p class="nota-p">Agrégalos y la proyección se calcula sola.</p><button class="btn" id="pyCfg" style="margin-top:12px">Agregar referentes y costos</button></div>'; $('pyCfg').onclick=()=>editarInmueble(os); return; }
+  const H=p.hist||{};
+  let h='<div class="card" style="padding:14px 18px"><p class="nota-p" style="margin:0">Proyección móvil: el resto del trimestre en curso y el trimestre siguiente. Se recalcula cada día con las tarifas del Pricing, tus reservas, la ocupación de los referentes y las fechas especiales. Cuando un trimestre empieza, aparece el siguiente. Historial de '+esc(os.nombre)+': '+(H.n?pctS(H.occ)+' de ocupación desde '+esc(fechaLarga(H.desde)):'sin reservas previas')+'.</p></div>';
+  horizonte().forEach(P=>{ h+=tarjetaPeriodo(P,[{os,rv:p}],true); });
+  $('pyCuerpo').innerHTML=h;
+}
+
+/* ───── Presupuestos: meta fija por mes vs real ───── */
+function pintarPpto(){
+  const v=$('ppProp').value, pares=propsRC().map(os => ({os, rv:revDe(os)})).filter(x => x.rv && (!v || x.os.id===v)), una=pares.length===1;
+  let h=(pares.length? (una? seguimientoHtml(pares[0].rv) : seguimientoPortafolio(pares)) : '');
+  const meses=[RV.TM].concat(horizonte().flatMap(P=>P.ms));
+  const filas=meses.map(m=>{ let meta=0, rv=0, rn=0, dias=0, fijo=true; pares.forEach(x=>{ const fz=m<=RV.TM?congelarMes(x.rv,m):null, pm=fz||presMes(x.rv,m,true); if(!fz) fijo=false; meta+=pm.neto; const r=realMes(x.os.id,m); rv+=r.v; rn+=r.n; dias+=diasMes(m); }); return { m, meta, rv, rn, dias, fijo }; });
+  h+='<div class="card" style="margin-top:14px"><h3 class="tit-card">Presupuesto vs real</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Mes</th><th class="num-r">Presupuesto neto</th><th class="num-r">Reservado</th><th class="num-r">Cumplimiento</th><th class="num-r">Ocupación real</th><th>Estado</th></tr>'+
+    filas.map(f=>{ const cu=f.meta?f.rv/f.meta:null; return '<tr'+(f.m===RV.TM?' style="background:var(--sage-l)"':'')+'><td><b>'+capM(f.m)+' '+f.m.slice(0,4)+'</b></td><td class="num-r"><b>'+cop(f.meta)+'</b><div class="eti">'+(f.fijo?'fijo':'preliminar, se fija el día 1')+'</div></td><td class="num-r">'+(f.rv?cop(f.rv):'—')+'</td><td class="num-r">'+(f.m===RV.TM?chipPct(cu):f.rv?pctS(cu):'—')+'</td><td class="num-r">'+pctS(f.rn/f.dias)+'<div class="eti">'+f.rn+' noches</div></td><td>'+(f.m===RV.TM?'<span class="chip '+(cu>=1?'v':'')+'">En curso</span>':'<span class="eti">'+(f.rn?'Reservando':'Sin reservas aún')+'</span>')+'</td></tr>'; }).join('')+
+    '</table></div><p class="nota-p" style="margin-top:8px">El presupuesto de cada mes sale de la proyección y queda fijo el día que empieza el mes; desde ahí se mide contra tus reservas reales (neto). Los meses futuros se muestran como preliminares y se siguen ajustando con el mercado.</p></div>';
+  $('ppCuerpo').innerHTML=h;
+}
 
 </script>
 </body>
