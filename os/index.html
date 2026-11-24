@@ -3231,7 +3231,7 @@ abrirFichaPropiedad = function(id){
 async function cargarPpto(forzar){
   const C=$('ppCuerpo'); if (!rev||forzar) C.innerHTML=esqueleto(3);
   try { await cargarRev(forzar); } catch(e){ return avisoRev(C, e, () => cargarPpto(true)); }
-  const ps=selProps('ppProp', true, true);
+  const ps=selProps('ppProp', true, true); if (!$('ppProp').value && ps.length) { $('ppProp').value=ps[0].id; }
   $('ppProp').onchange=()=>{ lsSet('blum_ppto_sel',$('ppProp').value); pintarPpto(); }; $('ppAct').onclick=()=>cargarPpto(true);
   if (!ps.length) { C.innerHTML='<div class="card"><div class="vacio">Aún no hay inmuebles configurados. En <b>Propiedades</b> abre cada inmueble y completa <b>Referentes y costos</b>.</div></div>'; return; }
   pintarPpto();
@@ -3543,6 +3543,47 @@ function pintarPpto(){
     filas.map(f=>{ const cu=f.meta?f.rv/f.meta:null; return '<tr'+(f.m===RV.TM?' style="background:var(--sage-l)"':'')+'><td><b>'+capM(f.m)+' '+f.m.slice(0,4)+'</b></td><td class="num-r"><b>'+cop(f.meta)+'</b><div class="eti">'+(f.fijo?'fijo':'preliminar, se fija el día 1')+'</div></td><td class="num-r">'+(f.rv?cop(f.rv):'—')+'</td><td class="num-r">'+(f.m===RV.TM?chipPct(cu):f.rv?pctS(cu):'—')+'</td><td class="num-r">'+pctS(f.rn/f.dias)+'<div class="eti">'+f.rn+' noches</div></td><td>'+(f.m===RV.TM?'<span class="chip '+(cu>=1?'v':'')+'">En curso</span>':'<span class="eti">'+(f.rn?'Reservando':'Sin reservas aún')+'</span>')+'</td></tr>'; }).join('')+
     '</table></div><p class="nota-p" style="margin-top:8px">El presupuesto de cada mes sale de la proyección y queda fijo el día que empieza el mes; desde ahí se mide contra tus reservas reales (neto). Los meses futuros se muestran como preliminares y se siguen ajustando con el mercado.</p></div>';
   $('ppCuerpo').innerHTML=h;
+}
+
+/* ═════════ Paso 1 · PRESUPUESTO (variables → cálculo por mes → seguimiento) ═════════ */
+function variablesHtml(os, p){
+  const c=datosT().props[os.id]||{}, cb=costosBase(os), a=p.auto||{}, H=p.hist||{}, refs=p.competitors.filter(x=>x.link).length, ult=ultRev(p);
+  const evs={}; horizonte().forEach(P=>P.ms.forEach(m=>{ mdaysP(m).forEach(d=>{ const r=RV.rec(p,d); if (r.ev && r.t!=='sem' && r.t!=='fds') evs[r.ev.name]=evs[r.ev.name]||{d,t:r.t}; }); }));
+  const lista=Object.keys(evs).slice(0,8).map(n=>esc(n)+' <span class="eti">'+fechaLarga(evs[n].d)+' · ×'+RV.fx(RV.mult(p,evs[n].t))+'</span>').join('<br>');
+  const fila=(n,v,val,src)=>'<tr><td><b>'+n+'. '+v+'</b><div class="eti" style="text-transform:none;letter-spacing:0">'+src+'</div></td><td>'+val+'</td></tr>';
+  return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3 class="tit-card" style="margin:0">Variables del presupuesto · '+esc(os.nombre)+'</h3><button class="btn sec chico" type="button" id="ppVar">Editar variables</button></div>'+
+    '<div class="tabla-wrap" style="margin-top:10px"><table class="tabla">'+
+    fila(1,'Costos fijos del mes','<b>'+cop(RV.fixedCosts(p))+'</b><div class="eti" style="text-transform:none;letter-spacing:0">Arriendo '+cop(pesos(c.arriendo))+' · otros '+cop(pesos(c.otros))+' · servicios '+cop(cb.totalServ)+'</div>','Los pones tú en la propiedad + Servicios de BLÜM OS')+
+    fila(2,'Mercado entre semana','<b>'+(a.mkt?cop(a.mkt):'—')+'</b> por noche','Mediana de tus 5 referentes ('+refs+' cargados'+(ult?', revisados '+esc(fechaLarga(ult)):'')+')')+
+    fila(3,'Mercado fin de semana','<b>×'+RV.fx(RV.mult(p,'fds'))+'</b> sobre entre semana'+(a.mktWe?' <span class="eti">(referentes '+cop(a.mktWe)+')</span>':''),'Lo que cobran y se llenan tus referentes vie–sáb y lo que te pagaron tus huéspedes')+
+    fila(4,'Temporadas y eventos','Puentes y temporada ×'+RV.fx(RV.mult(p,'esp'))+' · eventos ×'+RV.fx(RV.mult(p,'evt'))+' · Carnaval y 30–31 dic ×'+RV.fx(RV.mult(p,'top'))+(lista?'<div style="margin-top:6px;font-size:.85rem">'+lista+'</div>':''),'Festivos de Colombia, Carnaval, fin de año y eventos locales')+
+    fila(5,'Ocupación esperada','<b>70% a 95%</b> según temporada <span class="eti">(tu historial: '+(H.n?pctS(H.occ)+' desde '+esc(fechaLarga(H.desde)):'sin datos')+')</span>','Nunca menos de 70%; baja solo si tu precio queda por encima del mercado')+
+    fila(6,'Comisiones','Airbnb <b>'+String(p.platformPct).replace('.',',')+'%</b> · BLÜM <b>'+String(p.mgmtPct).replace('.',',')+'%</b> '+(p.mgmtBase==='net'?'sobre el neto':'sobre el bruto'),'Airbnb 15,5% + IVA · BLÜM según el contrato vigente')+
+    fila(7,'Limpieza y aseo','Cobras <b>'+cop(p.cleanFee)+'</b> por reserva · pagas <b>'+cop(p.cleanCost)+'</b> de aseo · estadía promedio '+String(Math.round((p.avgStay||2.5)*10)/10).replace('.',',')+' noches','Tus reservas en BLÜM OS')+
+    '</table></div></div>';
+}
+function presupuestoMesHtml(p, m){
+  const x=presMes(p,m), G=x.G, pasos=[
+    ['Noches del mes por tipo', ['sem','fds','esp'].map(k=>G[k].d+' '+G[k].l.toLowerCase()).join(' · ')],
+    ['Precio de cada tipo', ['sem','fds','esp'].filter(k=>G[k].n).map(k=>G[k].l+' '+cop(G[k].v/G[k].n)).join(' · ')+' (promedio por noche)'],
+    ['Noches que se esperan vender', Math.round(x.n)+' de '+x.dias+' ('+pctS(x.occ)+') ≈ '+Math.round(x.stays)+' reservas'],
+    ['Ingresos', cop(x.bruto)+' en noches + '+cop(x.limp)+' de limpieza = <b>'+cop(x.total)+'</b>'],
+    ['Lo que le queda al propietario', cop(x.total)+' − Airbnb '+cop(x.airbnb)+' − BLÜM '+cop(x.blum)+' − aseos '+cop(x.aseos)+' − costos fijos '+cop(x.fijos)+' = <b class="'+(x.res>=0?'verde':'terra')+'">'+cop(x.res)+'</b>']];
+  return '<details style="margin-top:8px"><summary style="cursor:pointer;font-weight:600">Cómo se armó '+capM(m)+'</summary><div style="margin-top:8px">'+pasos.map((s,i)=>'<div class="hist"><b>'+(i+1)+'. '+s[0]+'</b><div>'+s[1]+'</div></div>').join('')+
+    (Object.keys(G.esp.ev||{}).length?'<div class="nota-p">Fechas especiales del mes: '+esc(Object.keys(G.esp.ev).join(' · '))+'</div>':'')+'</div></details>';
+}
+function pintarPpto(){
+  const v=$('ppProp').value, pares=propsRC().map(os => ({os, rv:revDe(os)})).filter(x => x.rv && (!v || x.os.id===v)), una=pares.length===1;
+  if (!pares.length) { $('ppCuerpo').innerHTML='<div class="card"><div class="vacio">Ningún inmueble tiene variables todavía. Elige uno en la lista o ve a Propiedades → Tarifas y presupuesto.</div></div>'; return; }
+  let h=una? variablesHtml(pares[0].os, pares[0].rv) : '<div class="card" style="padding:14px 18px"><p class="nota-p" style="margin:0">Vista de todo el portafolio: elige un inmueble en la lista para ver sus variables y cómo se armó cada mes.</p></div>';
+  horizonte().forEach(P=>{ h+=tarjetaPeriodo(P, pares, una).replace(/<details[\s\S]*<\/details>/,'').replace(/<\/div>$/, (una? P.ms.map(m=>presupuestoMesHtml(pares[0].rv,m)).join('') : '')+'</div>'); });
+  h+='<h3 class="tit-card" style="margin:22px 0 4px">Seguimiento: real vs presupuesto</h3>'+(una? seguimientoHtml(pares[0].rv) : seguimientoPortafolio(pares));
+  const meses=[RV.TM].concat(horizonte().flatMap(P=>P.ms));
+  const filas=meses.map(m=>{ let meta=0, rv=0, rn=0, dias=0, fijo=true; pares.forEach(x=>{ const fz=m<=RV.TM?congelarMes(x.rv,m):null, pm=fz||presMes(x.rv,m,true); if(!fz) fijo=false; meta+=pm.neto; const r=realMes(x.os.id,m); rv+=r.v; rn+=r.n; dias+=diasMes(m); }); return { m, meta, rv, rn, dias, fijo }; });
+  h+='<div class="card" style="margin-top:14px"><h3 class="tit-card">Presupuesto neto vs reservado, mes a mes</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Mes</th><th class="num-r">Presupuesto neto</th><th class="num-r">Reservado</th><th class="num-r">Cumplimiento</th><th class="num-r">Ocupación real</th></tr>'+
+    filas.map(f=>{ const cu=f.meta?f.rv/f.meta:null; return '<tr'+(f.m===RV.TM?' style="background:var(--sage-l)"':'')+'><td><b>'+capM(f.m)+' '+f.m.slice(0,4)+'</b></td><td class="num-r"><b>'+cop(f.meta)+'</b><div class="eti">'+(f.fijo?'fijo':'se fija el día 1')+'</div></td><td class="num-r">'+(f.rv?cop(f.rv):'—')+'</td><td class="num-r">'+(f.m===RV.TM?chipPct(cu):f.rv?pctS(cu):'—')+'</td><td class="num-r">'+pctS(f.rn/f.dias)+'<div class="eti">'+f.rn+' noches</div></td></tr>'; }).join('')+'</table></div></div>';
+  $('ppCuerpo').innerHTML=h;
+  if (una && $('ppVar')) $('ppVar').onclick=()=>editarInmueble(pares[0].os);
 }
 
 </script>
