@@ -3045,8 +3045,11 @@ const fracPct=v=>{ if (v===''||v==null) return null; let n=parseFloat(String(v).
 const pesos=v=>Number(String(v==null?'':v).replace(/[^\d]/g,''))||0;
 async function reservasPlan(forzar){
   if (resPlan && !forzar) return resPlan;
-  const r = await api('listarReservas', { desde: '2025-01-01', hasta: REV_FIN+'-31', propiedad:'' });
-  resPlan = (r.reservas||[]).filter(x => x.estado_reserva!=='Cancelada'); return resPlan;
+  /* el servidor acepta máximo 13 meses por consulta: se pide en tramos de 12 meses */
+  const tramos=[]; for (let d='2025-11-01'; d<=REV_FIN+'-31'; ) { const h=RV.addDays(RV.addMonths(d.slice(0,7),12)+'-01',-1); tramos.push([d, h<REV_FIN+'-31'?h:REV_FIN+'-31']); d=RV.addMonths(d.slice(0,7),12)+'-01'; }
+  const rs=await Promise.all(tramos.map(t=>api('listarReservas', { desde:t[0], hasta:t[1], propiedad:'' })));
+  const vistos={}; resPlan=[]; rs.forEach(r=>(r.reservas||[]).forEach(x=>{ if (x.estado_reserva==='Cancelada'||vistos[x.codigo]) return; vistos[x.codigo]=1; resPlan.push(x); }));
+  return resPlan;
 }
 async function directorioT(forzar){ if (osDir && !forzar) return osDir; osDir = (typeof dir!=='undefined' && dir && dir.servicios) ? dir : await api('directorio'); return osDir; }
 function costosBase(os){
