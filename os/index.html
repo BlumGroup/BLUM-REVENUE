@@ -3218,11 +3218,11 @@ async function cargarPpto(forzar){
   pintarPpto();
 }
 const PERIODOS=[{t:'Diciembre 2026', sub:'Cierre del año', ms:['2026-12']},{t:'Q1 2027', sub:'Enero, febrero y marzo · incluye Carnaval', ms:['2027-01','2027-02','2027-03']}];
-function presMes(p, m){
+function presMes(p, m, completo){
   const G={sem:{l:'Entre semana',d:0,n:0,v:0},fds:{l:'Fin de semana',d:0,n:0,v:0},esp:{l:'Fechas especiales y eventos',d:0,n:0,v:0,ev:{}}}, k=kNeto(p);
   const fut=[]; let nFijo=0;
   for (const d of mdaysP(m)) { const r=RV.rec(p,d), k2=r.t==='sem'||r.t==='fds'?r.t:'esp', g=G[k2]; g.d++; if (g.ev&&r.ev) g.ev[r.ev.name]=1;
-    if (RV.stayOn(p,d)) { g.n++; g.v+=r.price; nFijo++; } else if (d>=RV.T) fut.push({g, q:RV.pday(p,d,r), pr:r.price}); }
+    if (RV.stayOn(p,d)) { g.n++; g.v+=r.price; nFijo++; } else if (completo || d>=RV.T) fut.push({g, q:RV.pday(p,d,r), pr:r.price}); }
   /* piso de ocupación del mes: nunca menos de la ocupación objetivo (mín. 70%) contando lo que aún se puede vender */
   const obj=RV.occM(p,m)*diasMes(m), sumQ=fut.reduce((a,x)=>a+x.q,0), falta=Math.max(0, obj-nFijo-sumQ), cupo=fut.reduce((a,x)=>a+(1-x.q),0), f=cupo>0?Math.min(1,falta/cupo):0;
   fut.forEach(x=>{ const q=x.q+(1-x.q)*f; x.g.n+=q; x.g.v+=x.pr*q; });
@@ -3232,9 +3232,63 @@ function presMes(p, m){
   return { m, G, n, dias, occ:n/dias, bruto, adr:n?bruto/n:0, neto, blum, aseos, fijos, res: neto-blum-aseos-fijos, real:r };
 }
 const mdaysP=m=>Array.from({length:diasMes(m)},(_,i)=>m+'-'+String(i+1).padStart(2,'0'));
+
+/* ───── Seguimiento diario (cumplimiento, ritmo, mercado y plan de acción) ───── */
+function congelarMes(p, m){
+  const d=datosT(), c=d.props[p.osId]; if (!c) { const x=presMes(p,m,true); return { bruto:x.bruto, neto:x.neto, n:x.n, occ:x.occ, at:RV.T }; }
+  c.cong=c.cong||{}; if (!c.cong[m]) { const x=presMes(p,m,true); c.cong[m]={ bruto:Math.round(x.bruto), neto:Math.round(x.neto), n:Math.round(x.n), occ:+x.occ.toFixed(3), at:RV.T }; guardarT(d).catch(()=>{}); }
+  return c.cong[m];
+}
+function seguimiento(p){
+  const m=RV.TM, dias=diasMes(m), dia=+RV.T.slice(8), dp=(dia-1)/dias, k=kNeto(p), pres=congelarMes(p,m), real=realMes(p.osId,m);
+  const libres=mdaysP(m).filter(d=>d>=RV.T && !RV.occ(p,d)).map(d=>RV.rec(p,d));
+  const esperado=libres.reduce((a,r)=>a+r.price*RV.pday(p,r.d,r)*k,0), cierre=real.v+esperado, falta=Math.max(0,pres.neto-real.v);
+  const tarLibre=libres.length? libres.reduce((a,r)=>a+r.price,0)/libres.length*k : 0, nNec=tarLibre? Math.ceil(falta/tarLibre) : 0;
+  const cum=pres.neto? real.v/pres.neto : null, occR=real.n/dias, occObj=RV.occM(p,m);
+  const est = cum>=1 ? ['Meta cumplida','v'] : cierre>=pres.neto*0.97 ? ['En camino','v'] : (nNec<=libres.length ? ['En riesgo','x'] : ['No alcanza','x']);
+  // mercado próximos 14 días
+  const d14=Array.from({length:14},(_,i)=>RV.addDays(RV.T,i)).map(d=>RV.rec(p,d));
+  let ck=0,un=0; const pr=[]; d14.forEach(r=>{ ck+=r.mk.checked||0; un+=r.mk.un||0; if (r.mk.rate&&!r.mk.sim) pr.push(r.mk.rate); });
+  const mkOcc=ck?un/ck:null, mkMed=pr.length? pr.sort((a,b)=>a-b)[Math.floor((pr.length-1)/2)] : 0;
+  // foto diaria para comparar con la visita anterior
+  let fotos={}; try { fotos=JSON.parse(localStorage.getItem('blum_seg_fotos')||'{}'); } catch(e){}
+  const hoyF={ rv:Math.round(real.v), rn:real.n, mkOcc, mkMed, rev:ultRev(p) }; fotos[p.osId]=fotos[p.osId]||{};
+  const ant=Object.keys(fotos[p.osId]).filter(x=>x<RV.T).sort().pop(), A=ant?fotos[p.osId][ant]:null;
+  fotos[p.osId][RV.T]=hoyF; const ks=Object.keys(fotos[p.osId]).sort(); while (ks.length>30) delete fotos[p.osId][ks.shift()]; try { localStorage.setItem('blum_seg_fotos', JSON.stringify(fotos)); } catch(e){}
+  // plan de acción
+  const acc=[], fecha=r=>fechaLarga(r.d);
+  const prox=libres.concat(mdaysP(RV.addMonths(m,1)).filter(d=>!RV.occ(p,d)).map(d=>RV.rec(p,d))).filter(r=>RV.addDays(RV.T,14)>=r.d);
+  const ultima=prox.filter(r=>r.d<=RV.addDays(RV.T,3)), llenas=prox.filter(r=>r.mk.checked>=3&&r.mk.un/r.mk.checked>=.6&&r.d>RV.addDays(RV.T,3));
+  if (cum!=null && cum < dp-0.10 && est[0]!=='Meta cumplida') acc.push(['Vas atrasado frente al ritmo del mes','Llevas '+pctS(cum)+' del presupuesto y ha pasado '+pctS(dp)+' del mes. Necesitas '+nNec+' noches más a ~'+cop(tarLibre/k)+'. Publica las noches libres al precio del mercado (sin bajar de '+cop(p.auto.floor)+') y permite estadías de 1 noche entre semana.']);
+  if (ultima.length) acc.push(['Noches libres en los próximos 3 días', ultima.map(r=>fecha(r)+' '+cop(Math.max(p.auto.floor, Math.min(r.price, r.mk.rate||r.price)))).join(' · ')+'. Última hora: estadía mínima 1 noche y precio igual al mercado.']);
+  if (llenas.length) acc.push(['El mercado se está llenando: sube estas noches', llenas.slice(0,5).map(r=>fecha(r)+' '+cop(r.price)+' ('+r.mk.un+'/'+r.mk.checked+' referentes llenos)').join(' · ')]);
+  if (A && A.mkMed && mkMed && mkMed < A.mkMed*0.95) acc.push(['El mercado bajó precios','La mediana de tus referentes pasó de '+cop(A.mkMed)+' a '+cop(mkMed)+'. Revisa las noches libres entre semana; tu tarifa ya se ajustó y nunca baja de '+cop(p.auto.floor)+'.']);
+  if (A && A.mkOcc!=null && mkOcc!=null && mkOcc < A.mkOcc-0.10) acc.push(['La demanda del mercado bajó','Ocupación de tus referentes: '+pctS(A.mkOcc)+' → '+pctS(mkOcc)+'. Prioriza vender noches cercanas antes que subir precio.']);
+  if (est[0]==='No alcanza') acc.unshift(['Este mes no alcanza el presupuesto','Faltan '+cop(falta)+' netos y solo quedan '+libres.length+' noches libres. Vende esas noches al precio del mercado (sin bajar de '+cop(p.auto.floor)+') y asegura desde ya las fechas fuertes del próximo mes para compensar.']);
+  else if (est[0]==='En riesgo') acc.unshift(['En riesgo: necesitas '+nNec+' de '+libres.length+' noches libres','Publica las noches libres del mes al precio sugerido, permite 1 noche entre semana y revisa mañana el avance.']);
+  if (est[0]==='Meta cumplida') acc.push(['Meta del mes cumplida','Protege el precio: no hagas descuentos y sube fines de semana y fechas especiales.']);
+  if (!acc.length) acc.push(['Mantén las tarifas sugeridas','Vas en línea con el presupuesto y el mercado. Revisa mañana.']);
+  if (!ultRev(p) || RV.addDays(ultRev(p),2) < RV.T) acc.push(['Actualiza el análisis de referentes','La última revisión de los referentes es del '+(ultRev(p)?fechaLarga(ultRev(p)):'—')+'. Los precios y la ocupación del mercado pueden haber cambiado.']);
+  return { m, dias, dia, dp, pres, real, cum, cierre, falta, nNec, libres:libres.length, occR, occObj, est, mkOcc, mkMed, A, ant, acc: acc.slice(0,5) };
+}
+function seguimientoHtml(p){
+  const S=seguimiento(p), a=p.auto||{}, cambio=(x,y,f)=> (x==null||y==null) ? '' : ' <span class="eti" style="text-transform:none;letter-spacing:0">('+(x>=y?'▲ ':'▼ ')+f(Math.abs(x-y))+' desde '+fechaLarga(S.ant)+')</span>';
+  return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div><h3 class="tit-card" style="margin:0">Seguimiento de hoy · '+capM(S.m)+'</h3><div class="eti" style="text-transform:none;letter-spacing:0;margin-top:3px">Día '+S.dia+' de '+S.dias+' ('+pctS(S.dp)+' del mes) · presupuesto fijado el '+esc(fechaLarga(S.pres.at))+'</div></div><span class="chip '+S.est[1]+'" style="font-size:.9rem">'+S.est[0]+'</span></div>'+
+    '<div class="kpis" style="margin:14px 0 0">'+
+    '<div class="kpi"><div class="eti">Cumplimiento</div><div class="v">'+pctS(S.cum)+'</div>'+barraP(S.cum)+'<div class="h">'+cop(S.real.v)+' de '+cop(S.pres.neto)+' netos'+(S.A?cambio(S.real.v,S.A.rv,cop):'')+'</div></div>'+
+    '<div class="kpi"><div class="eti">Cierre proyectado</div><div class="v '+(S.cierre>=S.pres.neto?'verde':'terra')+'">'+cop(S.cierre)+'</div><div class="h">'+(S.falta?'Faltan '+cop(S.falta)+' · ≈ '+S.nNec+' noches de '+S.libres+' libres':'Meta cumplida')+'</div></div>'+
+    '<div class="kpi"><div class="eti">Ocupación del mes</div><div class="v">'+pctS(S.occR)+'</div><div class="h">'+S.real.n+' noches reservadas · objetivo '+pctS(S.occObj)+(S.A?cambio(S.real.n,S.A.rn,v=>v+' noches'):'')+'</div></div>'+
+    '<div class="kpi"><div class="eti">Mercado · 14 días</div><div class="v">'+pctS(S.mkOcc)+'</div><div class="h">Referentes ocupados · precio '+(S.mkMed?cop(S.mkMed):'—')+(S.A&&S.A.mkMed&&S.mkMed?cambio(S.mkMed,S.A.mkMed,cop):'')+'</div></div></div>'+
+    '<h3 class="tit-card" style="margin-top:16px">Plan de acción</h3>'+S.acc.map((x,i)=>'<div class="hist"><b>'+(i+1)+'. '+esc(x[0])+'</b><div>'+esc(x[1])+'</div></div>').join('')+'</div>';
+}
+function seguimientoPortafolio(pares){
+  return '<div class="card"><h3 class="tit-card">Seguimiento de hoy · todos los inmuebles</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Inmueble</th><th>Estado</th><th class="num-r">Cumplimiento</th><th class="num-r">Cierre proyectado</th><th class="num-r">Ocupación</th><th class="num-r">Mercado</th><th>Acción principal</th></tr>'+
+    pares.map(x=>{ const S=seguimiento(x.rv); return '<tr><td><b>'+esc(x.os.nombre)+'</b></td><td><span class="chip '+S.est[1]+'">'+S.est[0]+'</span></td><td class="num-r">'+pctS(S.cum)+'<div class="eti">'+cop(S.real.v)+' / '+cop(S.pres.neto)+'</div></td><td class="num-r">'+cop(S.cierre)+'</td><td class="num-r">'+pctS(S.occR)+'</td><td class="num-r">'+pctS(S.mkOcc)+'</td><td style="max-width:260px">'+esc(S.acc[0][0])+'</td></tr>'; }).join('')+'</table></div></div>';
+}
+
 function pintarPpto(){
   const v=$('ppProp').value, pares=propsRC().map(os => ({os, rv:revDe(os)})).filter(x => x.rv && (!v || x.os.id===v)), una=pares.length===1;
-  let h='<div class="card" style="padding:14px 18px"><p class="nota-p" style="margin:0">El presupuesto lo calcula BLÜM OS con los <b>costos</b> del inmueble, las <b>tarifas sugeridas</b> de cada noche (referentes, fechas especiales y eventos) y la <b>ocupación esperada</b>: nunca menos del 70% (tu piso histórico); sube en temporada alta y cuando tu historial o tus referentes muestran más demanda, hasta 95%. Se ajusta con el mercado hasta que empieza el mes; ahí queda fijo para medir el cumplimiento con tus reservas.</p></div>';
+  let h=(pares.length? (una? seguimientoHtml(pares[0].rv) : seguimientoPortafolio(pares)) : '')+'<div class="card" style="padding:14px 18px;margin-top:14px"><p class="nota-p" style="margin:0">El presupuesto lo calcula BLÜM OS con los <b>costos</b> del inmueble, las <b>tarifas sugeridas</b> de cada noche (referentes, fechas especiales y eventos) y la <b>ocupación esperada</b>: nunca menos del 70% (tu piso histórico); sube en temporada alta y cuando tu historial o tus referentes muestran más demanda, hasta 95%. Se ajusta con el mercado hasta que empieza el mes; ahí queda fijo para medir el cumplimiento con tus reservas.</p></div>';
   PERIODOS.forEach(P => {
     const filas=P.ms.map(m => { const xs=pares.map(x=>presMes(x.rv,m)); const S=f=>xs.reduce((a,x)=>a+f(x),0); return { m, xs, n:S(x=>x.n), dias:S(x=>x.dias), bruto:S(x=>x.bruto), neto:S(x=>x.neto), blum:S(x=>x.blum), aseos:S(x=>x.aseos), fijos:S(x=>x.fijos), res:S(x=>x.res), rv:S(x=>x.real.v), rn:S(x=>x.real.n) }; });
     const T=k=>filas.reduce((a,f)=>a+f[k],0), tN=T('n'), tD=T('dias'), tB=T('bruto');
