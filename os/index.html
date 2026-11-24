@@ -3034,8 +3034,8 @@ const MERC_DEMO={
   }
  }
 };
-const TAR_INICIAL={"actualizado": "2026-11-24", "props": {"prxkpydpfg": {"nombre": "Firenze", "arriendo": 1025000, "otros": 1375000, "aseo": 60000, "limpieza": 0, "gastoNoche": 0, "airbnbPct": 16, "blumPct": null, "zona": "urbano", "refs": [{"link": "https://www.airbnb.com.co/rooms/1303832779839545763"}, {"link": "https://www.airbnb.com.co/rooms/1357248863972334403"}, {"link": "https://www.airbnb.com.co/rooms/932555342119626549"}, {"link": "https://www.airbnb.com.co/rooms/1187921344071309723"}, {"link": "https://www.airbnb.com.co/rooms/1350930961990543298"}], "plan": {}}}};
-function cargarTar(){ if (TAR) return TAR; try { TAR=JSON.parse(localStorage.getItem(T_KEY)||'null'); } catch(e){} if (!TAR||!TAR.props) TAR=JSON.parse(JSON.stringify(TAR_INICIAL)); MERC=MERC_DEMO; return TAR; }
+const TAR_INICIAL={"actualizado": "2026-11-24", "props": {"prxkpydpfg": {"nombre": "Firenze", "arriendo": 1025000, "otros": 1375000, "aseo": 60000, "limpieza": 60000, "gastoNoche": 0, "airbnbPct": 16, "blumPct": null, "zona": "urbano", "refs": [{"link": "https://www.airbnb.com.co/rooms/1303832779839545763"}, {"link": "https://www.airbnb.com.co/rooms/1357248863972334403"}, {"link": "https://www.airbnb.com.co/rooms/932555342119626549"}, {"link": "https://www.airbnb.com.co/rooms/1187921344071309723"}, {"link": "https://www.airbnb.com.co/rooms/1350930961990543298"}], "plan": {}}}};
+function cargarTar(){ if (TAR) return TAR; try { TAR=JSON.parse(localStorage.getItem(T_KEY)||'null'); } catch(e){} if (!TAR||!TAR.props) TAR=JSON.parse(JSON.stringify(TAR_INICIAL)); Object.values(TAR.props).forEach(c=>{ if (c.limpieza===''||c.limpieza==null||(c.limpieza===0&&!c.limpiezaOk)) { c.limpieza=60000; c.limpiezaOk=1; } }); MERC=MERC_DEMO; return TAR; }
 const datosT=()=>cargarTar();
 async function guardarT(d){ TAR=d; try { localStorage.setItem(T_KEY, JSON.stringify(d)); } catch(e){ throw new Error('No se pudo guardar en este navegador'); } }
 function avisoRev(cont, e){ cont.innerHTML='<div class="vacio">'+esc(e.message)+'</div>'; }
@@ -3061,7 +3061,7 @@ function historial(os, inicio){
   rs.forEach(r => { const x=nochesEnRango(r, ini, RV.addDays(hoyS,-1)); if(!x) return; n+=x; neto+=Number(r.neto||0)*x/Math.max(1,Number(r.noches)||x); });
   for (let d=ini; d<hoyS; d=RV.addDays(d,1)) { const k=+d.slice(5,7)-1; porMes[k]=porMes[k]||{d:0,n:0}; porMes[k].d++; }
   rs.forEach(r => { for (let d=r.checkin; d<r.checkout && d<hoyS; d=RV.addDays(d,1)) if (d>=ini) { const k=+d.slice(5,7)-1; if (porMes[k]) porMes[k].n++; } });
-  return { n, dias, occ: n/dias, neto, adrNeto: n? neto/n : 0, desde: ini, porMes };
+  const nr=rs.filter(r=>r.checkin>=ini).length; return { n, dias, occ: n/dias, neto, adrNeto: n? neto/n : 0, desde: ini, porMes, estancia: nr>=3 ? Math.max(1.2, Math.min(7, rs.filter(r=>r.checkin>=ini).reduce((a,r)=>a+(Number(r.noches)||0),0)/nr)) : 2.5 };
 }
 function propEngine(os, cfg, cb, H){
   const air=(cfg.airbnbPct!=null?cfg.airbnbPct:15.5), blum=(cfg.blumPct!=null?cfg.blumPct:(cb.blum!=null?cb.blum*100:15));
@@ -3071,13 +3071,13 @@ function propEngine(os, cfg, cb, H){
   if (H.n) for (let k=0;k<12;k++){ const pm=H.porMes[k]; if (pm && pm.d>=20) season[k]=Math.round(Math.max(0,Math.min(35,(pm.n/pm.d/0.70-1)*100))); }
   const p=RV.newProp({ id:os.id, osId:os.id, name:os.nombre, zone:cfg.zona||'urbano', link:cfg.link||cb.anuncio, guests:cfg.huespedes||2,
     fixedRent:pesos(cfg.arriendo), fixedAdmin:0, fixedUtilities:cb.totalServ, fixedInternet:0, fixedOther:pesos(cfg.otros),
-    cleanCost:pesos(cfg.aseo)||60000, cleanFee:pesos(cfg.limpieza), varNight:pesos(cfg.gastoNoche), platformPct:air, mgmtPct:blum, mgmtBase: cb.baseNeto?'net':'gross',
-    occ: 70, occMin: 70, season, avgStay:2.5, minStay:2, compWeight:100, paceOn:false,
+    cleanCost:pesos(cfg.aseo)||60000, cleanFee:(cfg.limpieza===''||cfg.limpieza==null)?60000:pesos(cfg.limpieza), varNight:pesos(cfg.gastoNoche), platformPct:air, mgmtPct:blum, mgmtBase: cb.baseNeto?'net':'gross',
+    occ: 70, occMin: 70, season, avgStay:(H.estancia||2.5), minStay:2, compWeight:100, paceOn:false,
     tFds:Number(cfg.tFds)||0, tEsp:Number(cfg.tEsp)||0, tEvt:Number(cfg.tEvt)||0, tTop:Number(cfg.tTop)||0, plan: JSON.parse(JSON.stringify(cfg.plan||{})) });
   const mo=(MERC&&MERC.props&&MERC.props[os.id])||{};
   p.competitors=Array.from({length:5},(_,i)=>{ const link=(cfg.refs&&cfg.refs[i]&&cfg.refs[i].link)||''; const id=(link.match(/rooms\/(\d+)/)||[])[1]||('r'+i); return { id, name:'Referente '+(i+1), link, obs: link ? (mo[id]||[]).map(o=>({date:o.date,status:o.status==='x'?'x':'ok',price:Number(o.price)||0,checked:o.checked})) : [] }; });
   p._refLinks=refs.length;
-  p._histAdr = H.n ? H.adrNeto/Math.max(.05,1-air/100) : 0;  // tarifa publicada aprox. a partir del neto
+  p._histAdr = H.n ? Math.max(0, H.adrNeto/Math.max(.05,1-air/100) - ((cfg.limpieza===''||cfg.limpieza==null)?60000:pesos(cfg.limpieza))/(H.estancia||2.5)) : 0;  // tarifa publicada aprox. a partir del neto
   return p;
 }
 async function cargarRev(forzar){
@@ -3178,7 +3178,7 @@ async function editarInmueble(os){
     '<h3 class="tit-card">Costos fijos del mes</h3>'+
     '<div class="nota-p" style="margin:0 0 8px">Servicios ya registrados en BLÜM OS: <b>'+cop(cb.totalServ)+'</b>'+(cb.servicios.length?' ('+cb.servicios.filter(s=>s.v).map(s=>esc(s.n)+' '+cop(s.v)).join(' · ')+')':'')+'. Los que no tienen valor se editan en la sección Servicios de la propiedad.</div>'+
     '<div class="grid dos" style="gap:10px">'+n('Arriendo o cuota','arriendo')+n('Otros fijos','otros','0','Predial, seguro, mantenimiento')+'</div>'+
-    '<h3 class="tit-card" style="margin-top:14px">Por reserva y comisiones</h3><div class="grid dos" style="gap:10px">'+n('Aseo por cada salida','aseo','60000')+n('Limpieza que cobras al huésped','limpieza','0','0 si no cobras')+n('Gasto por noche ocupada','gastoNoche','0','Amenities, energía extra')+n('Comisión Airbnb %','airbnbPct','15,5')+n('Comisión BLÜM %','blumPct', cb.blum!=null? String(Math.round(cb.blum*1000)/10).replace('.',',') : '15','Del contrato vigente si lo dejas vacío')+
+    '<h3 class="tit-card" style="margin-top:14px">Por reserva y comisiones</h3><div class="grid dos" style="gap:10px">'+n('Aseo que pagas por cada salida','aseo','60000')+n('Tarifa de limpieza que paga el huésped (por reserva)','limpieza','60000','Se suma al precio por noche en Airbnb; 0 si no cobras')+n('Gasto por noche ocupada','gastoNoche','0','Amenities, energía extra')+n('Comisión Airbnb %','airbnbPct','15,5')+n('Comisión BLÜM %','blumPct', cb.blum!=null? String(Math.round(cb.blum*1000)/10).replace('.',',') : '15','Del contrato vigente si lo dejas vacío')+
     '<div><label>Ubicación</label><select data-k="zona"><option value="urbano">Ciudad</option><option value="playa"'+(c.zona==='playa'?' selected':'')+'>Playa</option></select></div></div>'+
     '<h3 class="tit-card" style="margin-top:14px">5 referentes (anuncios parecidos de la zona)</h3>'+refs.map((r,i)=>'<input data-rl="'+i+'" value="'+esc(r.link||'')+'" placeholder="https://www.airbnb.com.co/rooms/… · referente '+(i+1)+'" style="margin-top:6px">').join('')+
     '<div class="eti" style="text-transform:none;letter-spacing:0;margin-top:4px">Con estos anuncios se analiza qué noches tienen ocupadas y a qué precio, y con eso se ajustan tus tarifas sin bajar del punto de equilibrio.</div>'+
@@ -3227,9 +3227,9 @@ function presMes(p, m, completo){
   const obj=RV.occM(p,m)*diasMes(m), sumQ=fut.reduce((a,x)=>a+x.q,0), falta=Math.max(0, obj-nFijo-sumQ), cupo=fut.reduce((a,x)=>a+(1-x.q),0), f=cupo>0?Math.min(1,falta/cupo):0;
   fut.forEach(x=>{ const q=x.q+(1-x.q)*f; x.g.n+=q; x.g.v+=x.pr*q; });
   const n=G.sem.n+G.fds.n+G.esp.n, bruto=G.sem.v+G.fds.v+G.esp.v, dias=diasMes(m), stays=n/Math.max(1,Number(p.avgStay)||2.5);
-  const neto=(bruto+Number(p.cleanFee||0)*stays)*k, blum=(p.mgmtBase==='net'?neto:bruto)*Number(p.mgmtPct||0)/100, aseos=stays*Number(p.cleanCost||0)+n*Number(p.varNight||0), fijos=RV.fixedCosts(p);
+  const limp=Number(p.cleanFee||0)*stays, total=bruto+limp, airbnb=total*(1-k), neto=total-airbnb, blum=(p.mgmtBase==='net'?bruto*k:bruto)*Number(p.mgmtPct||0)/100, aseos=stays*Number(p.cleanCost||0)+n*Number(p.varNight||0), fijos=RV.fixedCosts(p);
   const r=realMes(p.osId,m);
-  return { m, G, n, dias, occ:n/dias, bruto, adr:n?bruto/n:0, neto, blum, aseos, fijos, res: neto-blum-aseos-fijos, real:r };
+  return { m, G, n, dias, occ:n/dias, bruto, limp, total, airbnb, stays, adr:n?bruto/n:0, neto, blum, aseos, fijos, res: neto-blum-aseos-fijos, real:r };
 }
 const mdaysP=m=>Array.from({length:diasMes(m)},(_,i)=>m+'-'+String(i+1).padStart(2,'0'));
 
@@ -3464,7 +3464,7 @@ function pintarPricing(){
     '<div class="nota-p" style="margin-top:10px"><b>Movimientos del mercado</b>'+(M.evs.length?' (revisión del '+esc(fechaLarga(M.rev))+' frente a la del '+esc(fechaLarga(M.ant))+'):<br>'+M.evs.map(esc).join('<br>'):': '+(ultRev(p)?'primera revisión del '+esc(fechaLarga(ultRev(p)))+'; los cambios (se ocupó, se liberó, subió o bajó precio) aparecen desde la siguiente revisión.':'aún sin revisión de referentes.'))+'</div></div>';
   // 2. Cambios para cargar en Airbnb
   h+='<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3 class="tit-card" style="margin:0">2 · Carga en Airbnb · próximos 90 días</h3><div style="display:flex;gap:8px"><button class="btn sec chico" type="button" id="prCopy">Copiar</button><button class="btn chico" type="button" id="prPub">Ya los cargué en Airbnb</button></div></div>'+
-    '<p class="nota-p" style="margin:6px 0 10px">'+(C.pub? 'Desde tu última carga ('+esc(fechaLarga(C.pub.fecha))+') cambiaron <b>'+C.cambios.length+' noches</b> en 5% o más. Solo actualiza estas:' : 'Primera carga: estas son las tarifas por rangos de fechas para los próximos 90 días. Cárgalas en el calendario de Airbnb y presiona "Ya los cargué".')+'</p>'+
+    '<p class="nota-p" style="margin:6px 0 10px">'+(C.pub? 'Desde tu última carga ('+esc(fechaLarga(C.pub.fecha))+') cambiaron <b>'+C.cambios.length+' noches</b> en 5% o más. Solo actualiza estas:' : 'Primera carga: tarifas por noche, por rangos de fechas, para los próximos 90 días (la limpieza de '+cop(Number(p.cleanFee||0))+' por reserva va aparte en Airbnb). Cárgalas en el calendario y presiona "Ya los cargué".')+'</p>'+
     (G.length? '<div class="tabla-wrap"><table class="tabla"><tr><th>Fechas</th><th class="num-r">Tarifa</th><th class="num-r">Antes</th><th class="num-r">Mín. noches</th></tr>'+G.slice(0,40).map(x=>'<tr><td><b>'+esc(x.desde===x.hasta?fechaLarga(x.desde):fechaLarga(x.desde)+' → '+fechaLarga(x.hasta))+'</b></td><td class="num-r"><b>'+cop(x.ahora)+'</b></td><td class="num-r">'+(x.antes?cop(x.antes)+' <span class="eti">'+(x.ahora>x.antes?'▲':'▼')+'</span>':'—')+'</td><td class="num-r">'+x.ms+'</td></tr>').join('')+'</table></div>'+(G.length>40?'<p class="nota-p">… y '+(G.length-40)+' rangos más (usa Copiar).</p>':'') : '<div class="vacio">Sin cambios: tu calendario de Airbnb está al día.</div>')+'</div>';
   // 3. Calendario
   h+='<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3 class="tit-card" style="margin:0">3 · Calendario de tarifas</h3><div class="seg">'+meses.map(m=>'<button type="button" data-prm="'+m+'" class="'+(m===prMes?'on':'')+'">'+capM(m)+'</button>').join('')+'</div></div>'+
@@ -3482,16 +3482,22 @@ function pintarPricing(){
 
 /* ───── Proyecciones: horizonte móvil (resto del trimestre + siguiente) ───── */
 function tarjetaPeriodo(P, pares, una){
-  const filas=P.ms.map(m => { const xs=pares.map(x=>presMes(x.rv,m)); const Sx=f=>xs.reduce((a,x)=>a+f(x),0); return { m, xs, n:Sx(x=>x.n), dias:Sx(x=>x.dias), bruto:Sx(x=>x.bruto), neto:Sx(x=>x.neto), blum:Sx(x=>x.blum), aseos:Sx(x=>x.aseos), fijos:Sx(x=>x.fijos), res:Sx(x=>x.res), rv:Sx(x=>x.real.v), rn:Sx(x=>x.real.n),
-    wk: una?(xs[0].G.sem.n?xs[0].G.sem.v/xs[0].G.sem.n:0):0, we: una?(xs[0].G.fds.n?xs[0].G.fds.v/xs[0].G.fds.n:0):0, sp: una?(xs[0].G.esp.n?xs[0].G.esp.v/xs[0].G.esp.n:0):0 }; });
-  const T=k=>filas.reduce((a,f)=>a+f[k],0), tN=T('n'), tD=T('dias'), tB=T('bruto');
+  const filas=P.ms.map(m => { const xs=pares.map(x=>presMes(x.rv,m)); const Sx=f=>xs.reduce((a,x)=>a+f(x),0);
+    return { m, xs, n:Sx(x=>x.n), dias:Sx(x=>x.dias), stays:Sx(x=>x.stays), bruto:Sx(x=>x.bruto), limp:Sx(x=>x.limp), total:Sx(x=>x.total), airbnb:Sx(x=>x.airbnb), neto:Sx(x=>x.neto), blum:Sx(x=>x.blum), aseos:Sx(x=>x.aseos), fijos:Sx(x=>x.fijos), res:Sx(x=>x.res), rv:Sx(x=>x.real.v), rn:Sx(x=>x.real.n) }; });
+  const T=k=>filas.reduce((a,f)=>a+f[k],0), tN=T('n'), tD=T('dias'), p0=pares[0].rv;
+  const fila=(f,tot)=>'<tr'+(tot?' style="background:var(--ink);color:#fff"':'')+'><td><b>'+(tot?'Total':capM(f.m))+'</b></td><td class="num-r">'+pctS(f.n/f.dias)+'<div class="eti"'+(tot?' style="color:#ddd"':'')+'>'+Math.round(f.n)+' noches · '+Math.round(f.stays)+' reservas</div></td><td class="num-r">'+cop(f.n?f.bruto/f.n:0)+'</td><td class="num-r">'+cop(f.bruto)+'</td><td class="num-r">'+cop(f.limp)+'</td><td class="num-r"><b>'+cop(f.total)+'</b></td><td class="num-r">−'+cop(f.airbnb)+'</td><td class="num-r">−'+cop(f.blum)+'</td><td class="num-r">−'+cop(f.aseos)+'</td><td class="num-r">−'+cop(f.fijos)+'</td><td class="num-r"><b'+(tot?'':' class="'+(f.res>=0?'verde':'terra')+'"')+'>'+cop(f.res)+'</b></td></tr>';
+  const tot={ n:tN, dias:tD, stays:T('stays'), bruto:T('bruto'), limp:T('limp'), total:T('total'), airbnb:T('airbnb'), blum:T('blum'), aseos:T('aseos'), fijos:T('fijos'), res:T('res') };
   return '<div class="card" style="margin-top:14px"><h3 class="tit-card" style="margin:0">'+P.t+'</h3><div class="eti" style="text-transform:none;letter-spacing:0;margin-top:3px">'+P.sub+'</div>'+
-    '<div class="kpis" style="margin:14px 0 6px"><div class="kpi"><div class="eti">Ingresos proyectados</div><div class="v">'+cop(tB)+'</div><div class="h">Neto Airbnb '+cop(T('neto'))+'</div></div><div class="kpi"><div class="eti">Ocupación</div><div class="v">'+pctS(tN/tD)+'</div><div class="h">'+Math.round(tN)+' de '+tD+' noches · piso 70%</div></div><div class="kpi"><div class="eti">Tarifa promedio</div><div class="v">'+cop(tN?tB/tN:0)+'</div><div class="h">Por noche vendida</div></div><div class="kpi"><div class="eti">Resultado</div><div class="v '+(T('res')>=0?'verde':'terra')+'">'+cop(T('res'))+'</div><div class="h">Después de Airbnb, BLÜM, aseos y costos fijos</div></div></div>'+
-    '<div class="tabla-wrap"><table class="tabla"><tr><th>Mes</th><th class="num-r">Ingresos</th><th class="num-r">Ocupación</th>'+(una?'<th class="num-r">Entre semana</th><th class="num-r">Fin de semana</th><th class="num-r">Fechas especiales</th>':'')+'<th class="num-r">Tarifa prom.</th><th class="num-r">Resultado</th><th class="num-r">Ya reservado</th></tr>'+
-    filas.map(f=>'<tr><td><b>'+capM(f.m)+'</b></td><td class="num-r"><b>'+cop(f.bruto)+'</b></td><td class="num-r">'+pctS(f.n/f.dias)+'<div class="eti">'+Math.round(f.n)+' noches</div></td>'+(una?'<td class="num-r">'+cop(f.wk)+'</td><td class="num-r">'+cop(f.we)+'</td><td class="num-r">'+(f.sp?cop(f.sp):'—')+'</td>':'')+'<td class="num-r">'+cop(f.n?f.bruto/f.n:0)+'</td><td class="num-r"><b class="'+(f.res>=0?'verde':'terra')+'">'+cop(f.res)+'</b></td><td class="num-r">'+(f.rn?f.rn+' noches · '+cop(f.rv):'<span class="eti">—</span>')+'</td></tr>').join('')+'</table></div>'+
-    (una? filas.map(f => { const x=f.xs[0]; return '<details style="margin-top:8px"><summary style="cursor:pointer;font-weight:600">Cómo se calculó '+capM(f.m)+'</summary><div class="tabla-wrap" style="margin-top:8px"><table class="tabla"><tr><th>Tipo de noches</th><th class="num-r">Noches del mes</th><th class="num-r">Se esperan vender</th><th class="num-r">Tarifa prom.</th><th class="num-r">Ingreso</th></tr>'+
+    '<div class="kpis" style="margin:14px 0 6px"><div class="kpi"><div class="eti">Paga el huésped</div><div class="v">'+cop(tot.total)+'</div><div class="h">Noches '+cop(tot.bruto)+' + limpieza '+cop(tot.limp)+'</div></div>'+
+    '<div class="kpi"><div class="eti">Ocupación</div><div class="v">'+pctS(tN/tD)+'</div><div class="h">'+Math.round(tN)+' de '+tD+' noches · ≈ '+Math.round(tot.stays)+' reservas</div></div>'+
+    '<div class="kpi"><div class="eti">Tarifa promedio por noche</div><div class="v">'+cop(tN?tot.bruto/tN:0)+'</div><div class="h">+ '+cop(Number(p0.cleanFee||0))+' de limpieza por reserva</div></div>'+
+    '<div class="kpi"><div class="eti">Le queda al propietario</div><div class="v '+(tot.res>=0?'verde':'terra')+'">'+cop(tot.res)+'</div><div class="h">Después de Airbnb, BLÜM, aseos y costos fijos</div></div></div>'+
+    '<div class="tabla-wrap"><table class="tabla"><tr><th>Mes</th><th class="num-r">Ocupación</th><th class="num-r">Tarifa noche</th><th class="num-r">Noches</th><th class="num-r">Limpieza</th><th class="num-r">Paga el huésped</th><th class="num-r">Airbnb</th><th class="num-r">BLÜM</th><th class="num-r">Aseos</th><th class="num-r">Costos fijos</th><th class="num-r">Propietario</th></tr>'+
+    filas.map(f=>fila(f)).join('')+(filas.length>1?fila(tot,true):'')+'</table></div>'+
+    '<p class="nota-p" style="margin-top:8px">Airbnb '+Number(p0.platformPct||0)+'% sobre todo lo que paga el huésped (noches + limpieza) · BLÜM '+Number(p0.mgmtPct||0)+'% sobre el neto de las noches · aseo pagado '+cop(Number(p0.cleanCost||0))+' por reserva · '+(una?'estadía promedio '+String(Math.round((p0.avgStay||2.5)*10)/10).replace('.',',')+' noches':'')+'.'+(filas.some(f=>f.rn)?' Ya reservado: '+filas.filter(f=>f.rn).map(f=>capM(f.m)+' '+f.rn+' noches ('+cop(f.rv)+' neto)').join(' · ')+'.':'')+'</p>'+
+    (una? filas.map(f => { const x=f.xs[0]; return '<details style="margin-top:8px"><summary style="cursor:pointer;font-weight:600">Cómo se calculó '+capM(f.m)+'</summary><div class="tabla-wrap" style="margin-top:8px"><table class="tabla"><tr><th>Tipo de noches</th><th class="num-r">Noches del mes</th><th class="num-r">Se esperan vender</th><th class="num-r">Tarifa prom.</th><th class="num-r">Ingreso noches</th></tr>'+
         ['sem','fds','esp'].map(k => { const g=x.G[k]; return g.d?'<tr><td>'+g.l+(g.ev&&Object.keys(g.ev).length?'<div class="eti" style="text-transform:none;letter-spacing:0">'+esc(Object.keys(g.ev).join(' · '))+'</div>':'')+'</td><td class="num-r">'+g.d+'</td><td class="num-r">'+Math.round(g.n)+' ('+pctS(g.n/g.d)+')</td><td class="num-r">'+cop(g.n?g.v/g.n:0)+'</td><td class="num-r">'+cop(g.v)+'</td></tr>':''; }).join('')+
-        '</table></div><p class="nota-p" style="margin-top:6px">Neto '+cop(x.neto)+' − BLÜM '+cop(x.blum)+' − aseos '+cop(x.aseos)+' − costos fijos '+cop(x.fijos)+' = resultado '+cop(x.res)+'.</p></details>'; }).join('') : '')+'</div>';
+        '</table></div></details>'; }).join('') : '')+'</div>';
 }
 function pintarProy(){
   const os=propsRC().find(p => p.id===$('pyProp').value); if (!os) return; const p=revDe(os);
