@@ -1956,9 +1956,41 @@ return {cargar,limpio,get state(){return state},C,T,TM,rec,ms,track,mult,TIERS,T
 const REV_INI='2026-11', REV_FIN='2027-12', T_KEY='blum_demo_tarifas';
 const EVENTOS_LOCALES=[{"id": "camilo-2026-12-05", "name": "Concierto Camilo · Puerta de Oro", "start": "2026-12-05", "end": "2026-12-05", "scope": "urbano", "impact": 15, "min": 0, "source": "https://tuboleta.com/es/categorias/conciertos", "note": "Tuboleta lo publica el sáb 5 dic; otra boletera dice 4 dic. Verificar."}, {"id": "parada-luz-2026-12-18", "name": "Gran Parada de la Luz", "start": "2026-12-18", "end": "2026-12-18", "scope": "urbano", "impact": 5, "min": 0, "source": "https://eventu.co/", "note": "Catedral y Plaza de La Paz"}, {"id": "last-dance-2026-12-19", "name": "The Last Dance · Estadio Metropolitano", "start": "2026-12-19", "end": "2026-12-19", "scope": "urbano", "impact": 15, "min": 0, "source": "https://www.tuboleta.com/es", "note": "Evento de estadio, sábado 19 dic"}, {"id": "bando-2027", "name": "Lectura del Bando · Carnaval 2027", "start": "2027-01-15", "end": "2027-01-16", "scope": "urbano", "impact": 20, "min": 2, "source": "https://carnavaldebarranquilla.org/carnaval-de-barranquilla-2027/", "note": "Sáb 16 ene, apertura oficial del Carnaval"}, {"id": "precarnaval-fds-2027", "name": "Fin de semana precarnaval", "start": "2027-01-22", "end": "2027-01-23", "scope": "urbano", "impact": 8, "min": 0, "source": "https://hablabarranquillamundo.net/2026/09/01/carnaval-de-barranquilla-2027-ya-tiene-fechas-lectura-del-bando-sera-el-16-de-enero-y-guacherna-el-29/", "note": "Impacto estimado"}, {"id": "guacherna-2027", "name": "Guacherna 2027", "start": "2027-01-29", "end": "2027-01-30", "scope": "urbano", "impact": 20, "min": 2, "source": "https://carnavaldebarranquilla.org/carnaval-de-barranquilla-2027/", "note": "Vie 29 ene; dom 31 ene Desfile del Carnaval de los Niños"}];
 let rev=null, revCarga=null, resPlan=null, resHist=null, osDir=null, aseoSem=0;
-const datosT=()=>{ try { return JSON.parse(localStorage.getItem(T_KEY)||'{"props":{}}'); } catch(e){ return {props:{}}; } };
-const guardarT=d=>{ try { localStorage.setItem(T_KEY, JSON.stringify(d)); } catch(e){} };
-const confirmarSimple=t=>window.confirm?window.confirm(t):true;
+let TAR=null, TAR_SHA=null, MERC=null, INF=null, tarCarga=null;
+const REV_KEY='blum_gh';
+const revCfg=()=>{ try { const g=JSON.parse(lsGet(REV_KEY)||'null'); return g&&g.token ? g : null; } catch(e){ return null; } };
+const revUrl=path=>{ const g=revCfg(); return 'https://api.github.com/repos/'+g.owner+'/'+g.repo+'/contents/'+path; };
+async function ghLeer(path, conSha){
+  const r=await fetch(revUrl(path)+'?ref='+(revCfg().branch||'main'), { headers:{ Authorization:'Bearer '+revCfg().token, Accept: conSha?'application/vnd.github+json':'application/vnd.github.raw+json' }, cache:'no-store' });
+  if (r.status===404) return null; if (r.status===401||r.status===403) throw new Error('La llave de GitHub no es válida o venció. Conéctala de nuevo.');
+  if (!r.ok) throw new Error('GitHub respondió '+r.status); const j=await r.json();
+  return conSha ? { sha:j.sha, data: JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,''))))) } : j;
+}
+async function ghEscribir(path, data, sha, msg){
+  const b64=btoa(unescape(encodeURIComponent(JSON.stringify(data,null,1))));
+  const r=await fetch(revUrl(path), { method:'PUT', headers:{ Authorization:'Bearer '+revCfg().token, Accept:'application/vnd.github+json' }, body: JSON.stringify({ message:msg, content:b64, sha: sha||undefined, branch: revCfg().branch||'main' }) });
+  if (!r.ok) throw new Error(r.status===409||r.status===422 ? 'Se guardó algo al mismo tiempo; intenta de nuevo.' : 'No se pudo guardar ('+r.status+')'); return (await r.json()).content.sha;
+}
+async function cargarTar(forzar){
+  if (TAR && !forzar) return TAR; if (!revCfg()) throw new Error('SIN_REV');
+  if (!tarCarga || forzar) tarCarga=(async()=>{ const [t,m,i]=await Promise.all([ghLeer('data/os-tarifas.json',true), ghLeer('data/os-mercado.json').catch(()=>null), ghLeer('data/os-informe.json').catch(()=>null)]);
+    TAR=(t&&t.data)||{props:{}}; TAR.props=TAR.props||{}; TAR_SHA=t&&t.sha; MERC=m||{}; INF=i||null; return TAR; })();
+  try { return await tarCarga; } finally { tarCarga=null; }
+}
+const datosT=()=>TAR||{props:{}};
+async function guardarT(d, msg){ TAR=d; TAR_SHA=await ghEscribir('data/os-tarifas.json', d, TAR_SHA, msg||'Tarifas BLÜM OS'); }
+function conectarRev(despues){
+  const g=revCfg()||{owner:'BlumGroup',repo:'BLUM-REVENUE-DATA',branch:'main'};
+  modal('Conectar el análisis diario','<p class="nota-p" style="margin-bottom:12px">Los referentes y costos se guardan en el repositorio privado donde Claude deja cada mañana el análisis de mercado. Pega una vez la llave de GitHub (la misma que ya usabas).</p>'+
+    '<div class="grid dos"><div><label>Organización</label><input id="rvO" value="'+esc(g.owner)+'"></div><div><label>Repositorio de datos</label><input id="rvR" value="'+esc(g.repo)+'"></div></div><div style="margin-top:10px"><label>Llave (token) de GitHub</label><input id="rvT" type="password" autocomplete="off" placeholder="github_pat_…"></div>',
+    [{ t:'Cancelar', sec:true, fn:cerrarModal }, { t:'Conectar', fn: () => { const t=$('rvT').value.trim(); if(!t) return toast('Pega la llave',true);
+      lsSet(REV_KEY, JSON.stringify({ owner:$('rvO').value.trim(), repo:$('rvR').value.trim(), branch:'main', token:t })); cerrarModal(); TAR=null; rev=null; despues&&despues(); } }]);
+}
+function avisoRev(cont, e, recargar){
+  if (e.message==='SIN_REV') { cont.innerHTML='<div class="card"><h3 class="tit-card">Conecta el análisis diario</h3><p class="nota-p">Una sola vez: así tus referentes y costos quedan guardados y Claude puede revisar cada mañana precios y disponibilidad de los referentes.</p><button class="btn" id="bRevCon" style="margin-top:12px">Conectar</button></div>'; $('bRevCon').onclick=()=>conectarRev(recargar); }
+  else cont.innerHTML='<div class="vacio">'+esc(e.message)+'</div>';
+}
+const confirmarSimple=t=>{ try { return window.confirm(t); } catch(e){ return true; } };
 const fracPct=v=>{ if (v===''||v==null) return null; let n=parseFloat(String(v).replace('%','').replace(',','.')); if (!isFinite(n)) return null; return n>1?n/100:n; };
 const pesos=v=>Number(String(v==null?'':v).replace(/[^\d]/g,''))||0;
 async function reservasPlan(forzar){
@@ -1984,34 +2016,35 @@ function historial(os, inicio){
 }
 function propEngine(os, cfg, cb, H){
   const air=(cfg.airbnbPct!=null?cfg.airbnbPct:15.5), blum=(cfg.blumPct!=null?cfg.blumPct:(cb.blum!=null?cb.blum*100:15));
-  const refs=(cfg.refs||[]).filter(r=>r&&r.link), precios=refs.map(r=>pesos(r.precio)).filter(v=>v>0);
+  const refs=(cfg.refs||[]).filter(r=>r&&r.link);
   const season=[20,10,0,0,-10,5,15,-5,-15,-10,-5,20];
   if (H.n && H.occ>0) for (let k=0;k<12;k++){ const pm=H.porMes[k]; if (pm && pm.d>=20) season[k]=Math.round(Math.max(-30,Math.min(30,(pm.n/pm.d/H.occ-1)*100))); }
   const p=RV.newProp({ id:os.id, osId:os.id, name:os.nombre, zone:cfg.zona||'urbano', link:cfg.link||cb.anuncio, guests:cfg.huespedes||2,
     fixedRent:pesos(cfg.arriendo), fixedAdmin:0, fixedUtilities:cb.totalServ, fixedInternet:0, fixedOther:pesos(cfg.otros),
     cleanCost:pesos(cfg.aseo)||60000, cleanFee:pesos(cfg.limpieza), varNight:pesos(cfg.gastoNoche), platformPct:air, mgmtPct:blum, mgmtBase: cb.baseNeto?'net':'gross',
-    occ: H.n ? Math.round(Math.max(50,Math.min(85,H.occ*100))) : 70, season, avgStay:2.5, minStay:2, compWeight:0, paceOn:false,
+    occ: H.n ? Math.round(Math.max(50,Math.min(85,H.occ*100))) : 70, season, avgStay:2.5, minStay:2, compWeight:100, paceOn:false,
     tFds:Number(cfg.tFds)||0, tEsp:Number(cfg.tEsp)||0, tEvt:Number(cfg.tEvt)||0, tTop:Number(cfg.tTop)||0, plan: JSON.parse(JSON.stringify(cfg.plan||{})) });
-  p.competitors=Array.from({length:5},(_,i)=>({ id:'r'+i, name:'Referente '+(i+1), link:(cfg.refs&&cfg.refs[i]&&cfg.refs[i].link)||'', obs:[] }));
-  p._refMed = precios.length ? precios.sort((a,b)=>a-b)[Math.floor((precios.length-1)/2)] : 0; p._refN=precios.length; p._refLinks=refs.length;
+  const mo=(MERC&&MERC.props&&MERC.props[os.id])||{};
+  p.competitors=Array.from({length:5},(_,i)=>{ const link=(cfg.refs&&cfg.refs[i]&&cfg.refs[i].link)||''; const id=(link.match(/rooms\/(\d+)/)||[])[1]||('r'+i); return { id, name:'Referente '+(i+1), link, obs: link ? (mo[id]||[]).map(o=>({date:o.date,status:o.status==='x'?'x':'ok',price:Number(o.price)||0,checked:o.checked})) : [] }; });
+  p._refLinks=refs.length;
   p._histAdr = H.n ? H.adrNeto/Math.max(.05,1-air/100) : 0;  // tarifa publicada aprox. a partir del neto
   return p;
 }
 async function cargarRev(forzar){
   if (rev && !forzar) return rev;
   if (!revCarga || forzar) revCarga = (async () => {
-    await Promise.all([reservasPlan(forzar), directorioT(forzar)]);
+    await Promise.all([reservasPlan(forzar), directorioT(forzar), cargarTar(forzar)]);
     const d=datosT(), lista=propsRC().filter(os => d.props[os.id]);
     const metas={}, st={ version:3, properties: lista.map(os => { const cfg=d.props[os.id], cb=costosBase(os), H=historial(os, fechaIni(os)); const p=propEngine(os,cfg,cb,H); metas[os.id]={cfg,cb,H}; return p; }) };
     let S=RV.cargar(st, null, { items:EVENTOS_LOCALES }, resPlan, {});
-    st.properties.forEach(p => { const sp=S.properties.find(x=>x.id===p.id), fl=sp.auto.floor, cands=[p._refMed, p._histAdr*0.93].filter(v=>v>0);
+    st.properties.forEach(p => { const sp=S.properties.find(x=>x.id===p.id), fl=sp.auto.floor; p._refMed=sp.auto.mkt||0; const cands=[p._refMed, p._histAdr*0.93].filter(v=>v>0);
       const med=cands.length? cands.sort((a,b)=>a-b)[Math.floor((cands.length-1)/2)] : 0;
       p.manBase = RV.rp(med ? Math.max(med, fl) : fl*1.15); p.plan = JSON.parse(JSON.stringify(metas[p.id].cfg.plan||{}));
       p._origen = !med ? 'Sin historial ni precios de referentes: equilibrio + 15%' : med<fl ? 'Tu historial y referentes están por debajo del equilibrio: se usa el equilibrio' : (p._refMed&&p._histAdr ? 'Entre tu historial y los referentes' : p._refMed ? 'Según los referentes' : 'Según tu historial de reservas'); });
     S=RV.cargar(st, null, { items:EVENTOS_LOCALES }, resPlan, {});
-    let cambio=false; S.properties.forEach(sp => { const o=st.properties.find(x=>x.id===sp.id), m=metas[sp.id]; sp.hist=Object.assign({},m.H,{adr:o._histAdr}); sp.baseOrigen=o._origen; sp.refMed=o._refMed; sp.refN=o._refN; sp.refLinks=o._refLinks;
+    let cambio=false; S.properties.forEach(sp => { const o=st.properties.find(x=>x.id===sp.id), m=metas[sp.id]; sp.hist=Object.assign({},m.H,{adr:o._histAdr}); sp.baseOrigen=o._origen; sp.refMed=o._refMed; sp.refLinks=o._refLinks;
       const cfg=d.props[sp.id]; cfg.plan=cfg.plan||{}; for (const k in sp.plan) if (!cfg.plan[k] && k>=RV.TM) { cfg.plan[k]=sp.plan[k]; cambio=true; } sp.planAt=Object.values(cfg.plan).map(v=>v.at).filter(Boolean).sort().pop(); });
-    if (cambio) guardarT(d);
+    if (cambio) await guardarT(d, 'Presupuesto proyectado (BLÜM OS)').catch(()=>{});
     rev={ S }; return rev; })();
   try { return await revCarga; } finally { revCarga=null; }
 }
@@ -2057,9 +2090,26 @@ function selProps(id, conTodas, soloConfig){
   return ps;
 }
 
+
+
+const ultRev=p=>p.competitors.flatMap(c=>c.obs).map(o=>o.checked).filter(Boolean).sort().pop()||'';
+function tablaRefs(p){
+  const cs=p.competitors.filter(c=>c.link); if (!cs.length) return '';
+  const d14=Array.from({length:14},(_,i)=>RV.addDays(RV.T,i));
+  const fila=c=>{ const ult=c.obs.map(o=>o.checked).sort().pop(), obs=c.obs.filter(o=>o.checked===ult && d14.indexOf(o.date)>=0), oc=obs.filter(o=>o.status==='x').length, pr=obs.filter(o=>o.status!=='x'&&o.price>0).map(o=>o.price).sort((a,b)=>a-b), med=pr.length?pr[Math.floor((pr.length-1)/2)]:0;
+    return '<tr><td><a href="'+esc(c.link)+'" target="_blank" rel="noopener">'+esc(c.name)+'</a></td><td class="num-r">'+(obs.length? oc+' de '+obs.length+' noches':'<span class="eti">sin revisar</span>')+'</td><td class="num-r">'+(med?cop(med):'—')+'</td><td class="num-r">'+(ult?esc(fechaLarga(ult)):'—')+'</td></tr>'; };
+  return '<div class="card" style="margin-bottom:14px"><h3 class="tit-card">Mercado · tus 5 referentes (próximos 14 días)</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Referente</th><th class="num-r">Ocupadas</th><th class="num-r">Precio por noche</th><th class="num-r">Revisado</th></tr>'+cs.map(fila).join('')+'</table></div><p class="nota-p" style="margin-top:8px">Precio = lo que paga el huésped por noche en una estadía de 2 noches. Cada día tu tarifa se ajusta hasta ±15% hacia lo que cobran ellos esa fecha (+8% si la mayoría está llena) y nunca baja de tu punto de equilibrio.</p></div>';
+}
+function informeHtml(p){
+  const ri=INF&&INF.props&&INF.props[p.osId]; if (!ri) return '';
+  return '<div class="card" style="margin-bottom:14px"><h3 class="tit-card">Pricing de hoy · '+esc(fechaLarga(INF.date||hoy()))+'</h3><p style="font-size:.95rem;line-height:1.55">'+esc(ri.resumen||'')+'</p>'+
+    (Array.isArray(ri.acciones)? ri.acciones.map((x,i)=>'<div class="hist"><b>'+(i+1)+'. '+esc(x.titulo||'')+'</b><div>'+esc(x.detalle||'')+'</div></div>').join(''):'')+
+    (Array.isArray(ri.alertas)&&ri.alertas.length?'<div class="nota-p" style="margin-top:8px">'+ri.alertas.map(esc).join('<br>')+'</div>':'')+'</div>';
+}
+
 /* ───── Referentes y costos (en Propiedades y en Proyecciones) ───── */
 async function editarInmueble(os){
-  try { await directorioT(); } catch(e){ return toast(e.message,true); }
+  try { await Promise.all([directorioT(), cargarTar()]); } catch(e){ if (e.message==='SIN_REV') return conectarRev(()=>editarInmueble(os)); return toast(e.message,true); }
   const d=datosT(), c=d.props[os.id]||{}, cb=costosBase(os), v=x=>x==null?'':x;
   const n=(l,k,ph,h)=>'<div><label>'+l+'</label><input data-k="'+k+'" inputmode="numeric" value="'+esc(v(c[k]))+'" placeholder="'+(ph||'0')+'">'+(h?'<div class="eti" style="text-transform:none;letter-spacing:0;margin-top:3px">'+h+'</div>':'')+'</div>';
   const refs=Array.from({length:5},(_,i)=>(c.refs||[])[i]||{});
@@ -2069,18 +2119,19 @@ async function editarInmueble(os){
     '<div class="grid dos" style="gap:10px">'+n('Arriendo o cuota','arriendo')+n('Otros fijos','otros','0','Predial, seguro, mantenimiento')+'</div>'+
     '<h3 class="tit-card" style="margin-top:14px">Por reserva y comisiones</h3><div class="grid dos" style="gap:10px">'+n('Aseo por cada salida','aseo','60000')+n('Limpieza que cobras al huésped','limpieza','0','0 si no cobras')+n('Gasto por noche ocupada','gastoNoche','0','Amenities, energía extra')+n('Comisión Airbnb %','airbnbPct','15,5')+n('Comisión BLÜM %','blumPct', cb.blum!=null? String(Math.round(cb.blum*1000)/10).replace('.',',') : '15','Del contrato vigente si lo dejas vacío')+
     '<div><label>Ubicación</label><select data-k="zona"><option value="urbano">Ciudad</option><option value="playa"'+(c.zona==='playa'?' selected':'')+'>Playa</option></select></div></div>'+
-    '<h3 class="tit-card" style="margin-top:14px">5 referentes (anuncios parecidos de la zona)</h3>'+refs.map((r,i)=>'<div style="display:grid;grid-template-columns:1fr 130px;gap:8px;margin-top:6px"><input data-rl="'+i+'" value="'+esc(r.link||'')+'" placeholder="https://www.airbnb.com.co/rooms/… · referente '+(i+1)+'"><input data-rp="'+i+'" inputmode="numeric" value="'+esc(r.precio||'')+'" placeholder="$ por noche"></div>').join('')+
-    '<div class="eti" style="text-transform:none;letter-spacing:0;margin-top:4px">Anota el precio por noche que ves hoy entre semana (opcional, mejora la tarifa base).</div>'+
+    '<h3 class="tit-card" style="margin-top:14px">5 referentes (anuncios parecidos de la zona)</h3>'+refs.map((r,i)=>'<input data-rl="'+i+'" value="'+esc(r.link||'')+'" placeholder="https://www.airbnb.com.co/rooms/… · referente '+(i+1)+'" style="margin-top:6px">').join('')+
+    '<div class="eti" style="text-transform:none;letter-spacing:0;margin-top:4px">Cada mañana Claude revisa en estos anuncios qué noches están ocupadas y a qué precio, y con eso ajusta tus tarifas sin bajar del punto de equilibrio.</div>'+
     '<h3 class="tit-card" style="margin-top:14px">Multiplicadores (vacío = automático)</h3><div class="grid dos" style="gap:10px">'+[['tFds','Fin de semana','×1,25'],['tEsp','Puentes y festivos','×1,5'],['tEvt','Eventos','×2'],['tTop','Fechas top (Carnaval, 30–31 dic)','×3']].map(x=>'<div><label>'+x[1]+'</label><input data-k="'+x[0]+'" value="'+esc(v(c[x[0]]))+'" placeholder="'+x[2]+'"></div>').join('')+'</div>';
-  const m=modal('Referentes y costos · '+os.nombre, cuerpo, [{ t:'Cancelar', sec:true, fn:cerrarModal }, { t:'Guardar', fn: () => {
-    const dd=datosT(), nc=Object.assign({}, dd.props[os.id]||{}), dec=x=>{ const y=parseFloat(String(x).replace(',','.')); return isFinite(y)?y:null; };
+  const m=modal('Referentes y costos · '+os.nombre, cuerpo, [{ t:'Cancelar', sec:true, fn:cerrarModal }, { t:'Guardar', fn: async b => {
+    const dd=JSON.parse(JSON.stringify(datosT())), nc=Object.assign({}, dd.props[os.id]||{}), dec=x=>{ const y=parseFloat(String(x).replace(',','.')); return isFinite(y)?y:null; };
     m.querySelectorAll('[data-k]').forEach(i => { const k=i.dataset.k, val=i.value.trim(); nc[k] = k==='zona' ? val : /Pct$|^t[A-Z]/.test(k) ? dec(val) : (val===''?'':pesos(val)); });
-    const refsN=[0,1,2,3,4].map(i => ({ link: m.querySelector('[data-rl="'+i+'"]').value.trim(), precio: pesos(m.querySelector('[data-rp="'+i+'"]').value) }));
+    const refsN=[0,1,2,3,4].map(i => ({ link: m.querySelector('[data-rl="'+i+'"]').value.trim().split('?')[0] }));
     if (refsN.some(r => r.link && !/^https:\/\/(www\.)?airbnb\.[a-z.]+\/rooms\/\d+/.test(r.link))) return toast('Los referentes deben ser enlaces de Airbnb /rooms/…', true);
     if ((nc.airbnbPct||15.5)+(nc.blumPct!=null?nc.blumPct:15) >= 90) return toast('Las comisiones no pueden sumar 90% o más', true);
     const antes=dd.props[os.id]||{}, cambia=['arriendo','otros','aseo','limpieza','gastoNoche','airbnbPct','blumPct','tFds','tEsp','tEvt','tTop','zona'].some(k=>String(antes[k]??'')!==String(nc[k]??'')) || JSON.stringify(antes.refs||[])!==JSON.stringify(refsN);
     nc.refs=refsN; nc.plan=nc.plan||{}; if (cambia) for (const k in nc.plan) if (k>RV.TM) delete nc.plan[k];
-    dd.props[os.id]=nc; guardarT(dd); cerrarModal(); toast('Guardado. Tarifas y presupuesto recalculados.'); rev=null;
+    nc.nombre=os.nombre; nc.actualizado=new Date().toISOString(); dd.props[os.id]=nc; b.disabled=true; b.textContent='Guardando…';
+    try { await guardarT(dd, 'Referentes y costos: '+os.nombre); } catch(e){ b.disabled=false; b.textContent='Guardar'; return toast(e.message,true); } cerrarModal(); toast('Guardado. Tarifas y presupuesto recalculados.'); rev=null;
     const vis=document.querySelector('section:not(.oculto)'); if (vis&&vis.id==='m-proy') cargarProy(true); else if (vis&&vis.id==='m-ppto') cargarPpto(true);
   } }]);
 }
@@ -2089,15 +2140,17 @@ const _abrirFichaPropiedadOrig = abrirFichaPropiedad;
 abrirFichaPropiedad = function(id){
   _abrirFichaPropiedadOrig(id);
   const os=(dir&&dir.propiedades||[]).find(x=>x.id===id), m=$('modal'); if (!os||!m||String(os.modalidades||'').indexOf('Renta corta')<0) return;
-  const c=datosT().props[id], pie=m.querySelector('.pie'), s=document.createElement('div'); s.className='seccion';
+  const pie=m.querySelector('.pie'), s=document.createElement('div'); s.className='seccion';
+  const pintar=()=>{ const c=datosT().props[id];
   s.innerHTML='<h3>Tarifas y presupuesto <button class="btn sec chico" type="button" id="fpTar">'+(c?'Editar':'＋ Completar')+'</button></h3>'+(c?'<div class="sub">'+((c.refs||[]).filter(r=>r.link).length)+' de 5 referentes · arriendo '+cop(c.arriendo||0)+' · aseo '+cop(c.aseo||0)+'</div>':'<div class="vacio">Faltan los costos fijos y los 5 referentes para calcular tarifas y presupuesto</div>');
-  pie ? pie.parentNode.insertBefore(s, pie) : m.querySelector('.caja').appendChild(s);
-  s.querySelector('#fpTar').onclick=()=>editarInmueble(os);
+  s.querySelector('#fpTar').onclick=()=>editarInmueble(os); };
+  pie ? pie.parentNode.insertBefore(s, pie) : m.querySelector('.caja').appendChild(s); pintar();
+  if (!TAR && revCfg()) cargarTar().then(pintar).catch(()=>{});
 };
 /* ───── Presupuestos ───── */
 async function cargarPpto(forzar){
   const C=$('ppCuerpo'); if (!rev||forzar) C.innerHTML=esqueleto(3);
-  try { await cargarRev(forzar); } catch(e){ C.innerHTML='<div class="vacio">'+esc(e.message)+'</div>'; return; }
+  try { await cargarRev(forzar); } catch(e){ return avisoRev(C, e, () => cargarPpto(true)); }
   const ps=selProps('ppProp', true, true);
   $('ppProp').onchange=()=>{ lsSet('blum_ppto_sel',$('ppProp').value); pintarPpto(); }; $('ppAct').onclick=()=>cargarPpto(true);
   if (!ps.length) { C.innerHTML='<div class="card"><div class="vacio">Aún no hay inmuebles configurados. En <b>Propiedades</b> abre cada inmueble y completa <b>Referentes y costos</b>.</div></div>'; return; }
@@ -2124,7 +2177,7 @@ function pintarPpto(){
 /* ───── Proyecciones ───── */
 async function cargarProy(forzar){
   const C=$('pyCuerpo'); if (!rev||forzar) C.innerHTML=esqueleto(3);
-  try { await cargarRev(forzar); } catch(e){ C.innerHTML='<div class="vacio">'+esc(e.message)+'</div>'; return; }
+  try { await cargarRev(forzar); } catch(e){ return avisoRev(C, e, () => cargarProy(true)); }
   const ps=selProps('pyProp', false, false);
   $('pyProp').onchange=()=>{ lsSet('blum_ppto_sel',$('pyProp').value); pintarProy(); }; $('pyAct').onclick=()=>cargarProy(true);
   if (!ps.length) { C.innerHTML='<div class="vacio">No hay propiedades activas de renta corta.</div>'; return; }
@@ -2138,12 +2191,12 @@ function pintarProy(){
     '<div class="kpis"><div class="kpi"><div class="eti">Punto de equilibrio</div><div class="v">'+cop(a.floor)+'</div><div class="h">Tarifa mínima por noche: cubre costos fijos, aseo y comisiones al 70% de ocupación</div></div>'+
     '<div class="kpi"><div class="eti">Tarifa base (entre semana)</div><div class="v">'+cop(base)+'</div><div class="h">'+esc(p.baseOrigen||'')+'</div></div>'+
     '<div class="kpi"><div class="eti">Tu historial</div><div class="v">'+(H.occ!=null?pctS(H.occ):'—')+'</div><div class="h">'+(H.n?'Ocupación · '+H.n+' noches vendidas desde '+esc(fechaLarga(H.desde))+' · tarifa prom. ≈ '+cop(H.adr):'Aún sin reservas registradas')+'</div></div>'+
-    '<div class="kpi"><div class="eti">Referentes</div><div class="v">'+(p.refMed?cop(p.refMed):'—')+'</div><div class="h">'+(p.refN?'Mediana de '+p.refN+' precios anotados':p.refLinks+' de 5 enlaces · anota su precio por noche')+'</div></div></div>';
+    '<div class="kpi"><div class="eti">Referentes · entre semana / fin de semana</div><div class="v">'+(a.mkt?cop(a.mkt):'—')+'</div><div class="h">'+(a.mktWe?'Fin de semana '+cop(a.mktWe)+' · ':'')+(p.refLinks? p.refLinks+' de 5 referentes'+(ultRev(p)?' · revisados '+esc(fechaLarga(ultRev(p))):' · Claude los revisa mañana a las 8:23') : 'Agrega los 5 referentes')+'</div></div></div>'+tablaRefs(p)+informeHtml(p);
   h+='<div class="card"><h3 class="tit-card">Tarifas sugeridas por tipo de día</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Tipo de día</th><th class="num-r">Multiplicador</th><th class="num-r">Tarifa sugerida</th></tr>'+
     RV.TIERS.map(([k,l]) => { const M=RV.mult(p,k); return '<tr><td><b>'+l+'</b><div class="eti" style="text-transform:none;letter-spacing:0">'+RV.TDESC[k]+'</div></td><td class="num-r">'+(k==='sem'?'base':'×'+RV.fx(M))+'</td><td class="num-r"><b>'+cop(Math.max(RV.rp(base*M),min))+'</b></td></tr>'; }).join('')+'</table></div></div>';
   const dias=Array.from({length:14},(_,i)=>RV.addDays(RV.T,i));
-  h+='<div class="card" style="margin-top:14px"><h3 class="tit-card">Tarifas para publicar · próximas 2 semanas</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Fecha</th><th class="num-r">Tarifa</th><th>Tipo de día</th><th class="num-r">Mín. noches</th></tr>'+
-    dias.map(d => { const r=RV.rec(p,d), o=RV.occ(p,d); return '<tr'+(o?' style="opacity:.5"':'')+'><td><b>'+esc(fechaLarga(d))+'</b></td><td class="num-r">'+(o?'<span class="eti">Reservada</span>':'<b>'+cop(r.price)+'</b>')+'</td><td>'+esc(RV.TN[r.t])+(r.ev&&r.t!=='sem'&&r.t!=='fds'?' · '+esc(r.ev.name):'')+'</td><td class="num-r">'+(o?'':r.ms)+'</td></tr>'; }).join('')+'</table></div></div>';
+  h+='<div class="card" style="margin-top:14px"><h3 class="tit-card">Tarifas para publicar · próximas 2 semanas</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Fecha</th><th class="num-r">Tarifa</th><th>Tipo de día</th><th class="num-r">Mín. noches</th><th class="num-r">Referentes</th></tr>'+
+    dias.map(d => { const r=RV.rec(p,d), o=RV.occ(p,d); return '<tr'+(o?' style="opacity:.5"':'')+'><td><b>'+esc(fechaLarga(d))+'</b></td><td class="num-r">'+(o?'<span class="eti">Reservada</span>':'<b>'+cop(r.price)+'</b>')+'</td><td>'+esc(RV.TN[r.t])+(r.ev&&r.t!=='sem'&&r.t!=='fds'?' · '+esc(r.ev.name):'')+'</td><td class="num-r">'+(o?'':r.ms)+'</td><td class="num-r">'+(r.mk.rate?cop(r.mk.rate)+' · ':'')+(r.mk.checked?r.mk.un+' de '+r.mk.checked+' ocupados':'—')+'</td></tr>'; }).join('')+'</table></div></div>';
   const G={}; mesesPlan().filter(m => m>=hoy().slice(0,7)).forEach(m => (G[trimDe(m)]=G[trimDe(m)]||[]).push(m));
   let filas='', Y={b:0,n:0,d:0,net:0};
   Object.keys(G).forEach(g => { let qb=0,qn=0,qd=0; const rs=G[g].map(m => { const pn=planNeto(p,m)||{}, r=realMes(os.id,m); qb+=pn.bruto||0; qn+=pn.n||0; qd+=diasMes(m); if (g!=='Cierre 2026'){ Y.b+=pn.bruto||0; Y.n+=pn.n||0; Y.d+=diasMes(m); Y.net+=pn.meta||0; }
@@ -2152,7 +2205,7 @@ function pintarProy(){
   h+='<div class="card" style="margin-top:14px"><h3 class="tit-card">Proyección · diciembre 2026 y 2027</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Mes</th><th class="num-r">Presupuesto</th><th class="num-r">Neto</th><th class="num-r">Ocupación</th><th class="num-r">Tarifa prom.</th><th class="num-r">Entre semana</th><th class="num-r">Fin de semana</th><th class="num-r">Ya reservado</th></tr>'+filas+
     '<tr style="background:var(--ink);color:#fff"><td><b>Total 2027</b></td><td class="num-r"><b>'+cop(Y.b)+'</b></td><td class="num-r">'+cop(Y.net)+'</td><td class="num-r">'+pctS(Y.d?Y.n/Y.d:null)+'</td><td class="num-r">'+cop(Y.n?Y.b/Y.n:0)+'</td><td colspan="3"></td></tr></table></div>'+
     '<p class="nota-p" style="margin-top:10px">Presupuesto = noches × tarifa sugerida × probabilidad de venderse (ocupación base ajustada por temporada; fines de semana y fechas especiales se venden más). Nunca es menor que los costos. Neto = después de la comisión de Airbnb ('+Number(p.platformPct||0)+'%). Proyectado el '+esc(fechaLarga(p.planAt||hoy()))+'.</p><button class="btn sec chico" id="pyRe" type="button" style="margin-top:10px">↻ Actualizar proyección</button></div>';
-  $('pyCuerpo').innerHTML=h; $('pyCfg').onclick=()=>editarInmueble(os); $('pyRe').onclick=()=>{ if(!confirmarSimple('¿Recalcular la proyección de los meses futuros con el historial y los costos de hoy? El mes en curso se mantiene para medirlo.'))return; const d=datosT(); const x=d.props[os.id]; if(x&&x.plan){ for(const k in x.plan) if(k>RV.TM) delete x.plan[k]; guardarT(d);} rev=null; cargarProy(true); };
+  $('pyCuerpo').innerHTML=h; $('pyCfg').onclick=()=>editarInmueble(os); $('pyRe').onclick=()=>{ if(!confirmarSimple('¿Recalcular la proyección de los meses futuros con el historial y los costos de hoy? El mes en curso se mantiene para medirlo.'))return; const d=JSON.parse(JSON.stringify(datosT())); const x=d.props[os.id]; if(x&&x.plan){ for(const k in x.plan) if(k>RV.TM) delete x.plan[k]; } guardarT(d,'Recalcular proyección: '+os.nombre).then(()=>{ rev=null; cargarProy(true); }).catch(e=>toast(e.message,true)); };
 }
 
 /* ───── Aseos ───── */
