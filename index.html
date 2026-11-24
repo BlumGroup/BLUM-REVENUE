@@ -177,13 +177,14 @@ function sug(p,m,from=''){return cached('sg'+p.id+m+from,()=>{let rev=0,n=0,av=0
  return {demanda:r10(rev),rentable:r10((base70+num(p.targetProfit))/keep(p)),utilidad:r10((base+num(p.targetProfit))/keep(p)),equilibrio:r10(base70/keep(p))}})}
 function autoPrice(p){const all=[],wk=[];for(const c of p.competitors)for(const o of c.obs||[]){if(o.status!=='ok'||!(o.price>0)||diff(o.checked,T)>21)continue;all.push(o.price);if(![5,6].includes(D(o.date).getDay()))wk.push(o.price)}
  const mkt=wk.length>=3?median(wk):all.length>=3?median(all)/1.1:0,marg=marginal(p),per=num(p.varNight)+num(p.cleanCost)/Math.max(1,num(p.avgStay,2)),
- be=(fixedCosts(p)/(30*OCCMIN)+per)/keep(p),floor=rp(Math.max((fixedCosts(p)/(30*OCCMIN)+per+num(p.targetProfit)/(30*OCCMIN))/keep(p),marg*1.25,50000));
- const base=mkt?Math.max(rp(mkt),floor):rp(floor*1.15);return {base,min:floor,max:rp(base*3),mkt:mkt?rp(mkt):0,be:rp(be),floor,marg:rp(marg),src:mkt?(rp(mkt)<floor?'piso':'mercado'):'costos',n:all.length,below:!!(mkt&&rp(mkt)<floor)}}
+ be=(fixedCosts(p)/(30*OCCMIN)+per)/keep(p),floor=rp(Math.max(be,marg*1.25,50000)),goal=rp((fixedCosts(p)/(30*OCCMIN)+per+num(p.targetProfit)/(30*OCCMIN))/keep(p));
+ const base=mkt?Math.max(rp(mkt),floor):rp(floor*1.15);return {base,min:floor,max:rp(base*3),mkt:mkt?rp(mkt):0,be:rp(be),floor,marg:rp(marg),goal,src:mkt?(rp(mkt)<floor?'piso':'mercado'):'costos',n:all.length,below:!!(mkt&&rp(mkt)<floor)}}
 function applyAuto(){for(const p of state.properties){const a=autoPrice(p);p.auto=a;p.base=num(p.manBase)||a.base;p.min=Math.max(num(p.manMin)||a.min,a.floor);p.base=Math.max(p.base,p.min);p.max=Math.max(num(p.manMax)||a.max,p.base)}}
 function ensureBudgets(){return false}
 function planFor(p){const s=ms(p,TM),a=p.auto||{},out=[];const need=Math.max(0,s.nTarget-s.bn);
  if(p.icalWindow)out.push(['!',`Abre tu calendario de Airbnb: está cerrado desde el ${fdate(p.icalWindow)} y no se pueden vender esas noches (Disponibilidad → Ventana de disponibilidad → 12 meses).`]);
  if(a.below)out.push(['!',`El mercado (${money(a.mkt)}) está por debajo de tu piso rentable (${money(a.floor)}). No bajes de ${money(a.floor)}: revisa costos fijos o mejora el anuncio (fotos, título, reseñas) para poder cobrar más que tus referentes.`]);
+ if(num(p.targetProfit)&&a.mkt&&a.goal>a.mkt*1.05)out.push(['!',`Para ganar tu utilidad objetivo (${money(p.targetProfit)}/mes) con 70% de ocupación necesitas ${money(a.goal)} por noche en promedio; el mercado está en ${money(a.mkt)}. Opciones: subir la ocupación por encima del 70%, cobrar más en fines de semana y eventos, o ajustar la utilidad objetivo.`]);
  if(s.budget&&s.revF<s.budget*.97){out.push(['!',`Este mes vas en ${pct(s.att)} de la meta (${money(s.revF)} de ${money(s.budget)}). Necesitas ${need} noche(s) más para llegar al 70% de ocupación (${s.nTarget} de ${s.avail}).`]);
   if(need>s.free)out.push(['!',`Solo quedan ${s.free} noches libres: aunque vendas todas no llegas al 70%. Prioriza vender todas a precio mínimo rentable (${money(a.floor)}) y escribe el facturado real si ya hubo reservas fuera del calendario.`]);
   else out.push(['→',`Acción: baja la estancia mínima a 1–2 noches entre semana, activa descuento de último minuto hasta ${money(a.floor)} (nunca menos) y difunde fechas libres por WhatsApp/redes para reservas directas.`])}
