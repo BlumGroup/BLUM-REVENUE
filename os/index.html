@@ -3606,7 +3606,7 @@ function cargarTar(){ if (TAR) return TAR; try { TAR=JSON.parse(localStorage.get
   MERC=MERC_GH||MERC_DEMO; return TAR; }
 function usarMercado(mm){ if (!mm||!mm.props) return; MERC_GH={ actualizado:mm.actualizado, props:Object.assign({}, MERC_DEMO.props, mm.props) }; MERC=MERC_GH; }
 async function sincronizar(forzar){
-  if (!ghCfg()) return; if (SYNC && !forzar) return SYNC;
+  if (!ghCfg()) { try { const t=JSON.parse(localStorage.getItem(T_KEY)||'null'); if (t&&t.props&&Object.values(t.props).some(v=>(v.refs||[]).some(r=>r&&r.link)) && !sessionStorage.getItem('blum_robot_pedido')) { sessionStorage.setItem('blum_robot_pedido','1'); setTimeout(conectarRobot, 1200); } } catch(e){} return; } if (SYNC && !forzar) return SYNC;
   SYNC=(async()=>{
     const [rt, mm, rb]=await Promise.all([ ghLeer('data/os-tarifas.json').catch(()=>undefined), gh('data/os-mercado.json',{raw:true}).catch(()=>null), gh('data/os-robot.json',{raw:true}).catch(()=>null) ]);
     const loc=cargarTar(); let sube=rt===null;
@@ -3623,7 +3623,7 @@ async function subirReferentes(){ const d=datosT(), out={ actualizado:new Date()
   for (const [k,v] of Object.entries(d.props)){ const l=(v.refs||[]).map(r=>r&&r.link).filter(Boolean); if (l.length) out.props[k]={ nombre:v.nombre||k, links:l }; }
   await ghEscribir('data/os-referentes.json', out, 'BLÜM OS: referentes actualizados'); }
 async function guardarT(d){ const antes=linksDe(TAR); TAR=d; try { localStorage.setItem(T_KEY, JSON.stringify(d)); } catch(e){ throw new Error('No se pudo guardar en este navegador'); }
-  if (!ghCfg()) return; subirTar();
+  if (!ghCfg()) { if (linksDe(d)!==antes) setTimeout(conectarRobot, 900); return; } subirTar();
   if (linksDe(d)!==antes) { try { await subirReferentes(); PEND=Date.now(); vigilarRobot(); setTimeout(()=>toast('El robot ya está revisando tus referentes en Airbnb. En unos 5 minutos aparecen aquí.'), 1500); }
     catch(e){ setTimeout(()=>toast('Guardado, pero no se pudo avisar al robot: '+e.message, true), 1500); } } }
 function repintar(){ rev=null; const vis=document.querySelector('section:not(.oculto)'), id=vis&&vis.id;
@@ -3635,7 +3635,7 @@ function vigilarRobot(){ clearInterval(vigT); const desde=new Date(PEND).toISOSt
     const malos=Object.values(rb.props||{}).reduce((a,p)=>a+Object.values(p.refs||{}).filter(r=>!r.ok).length,0);
     toast(malos ? 'Referentes revisados. '+malos+' no se pudieron leer: revisa el enlace.' : 'Referentes revisados en Airbnb. Tarifas y presupuesto recalculados.', !!malos); }, 45000); }
 function conectarRobot(){
-  const m=modal('Conectar el robot de referentes', '<p style="line-height:1.5">El robot revisa tus referentes en Airbnb apenas guardas los enlaces y todos los días a las 6 a. m. Este navegador necesita la llave de GitHub de BLÜM (la misma de la app de tarifas) para enviarle los enlaces. Se guarda solo en este navegador.</p><label>Llave de GitHub</label><input id="ghTok" type="password" autocomplete="off" placeholder="github_pat_…">',
+  const m=modal('Conectar el robot de referentes', '<p style="line-height:1.5"><b>Este navegador aún no está conectado</b>, por eso tus referentes no se han revisado. El robot revisa tus referentes en Airbnb apenas guardas los enlaces y todos los días a las 6 a. m. Este navegador necesita la llave de GitHub de BLÜM (la misma de la app de tarifas) para enviarle los enlaces. Se guarda solo en este navegador.</p><label>Llave de GitHub</label><input id="ghTok" type="password" autocomplete="off" placeholder="github_pat_…">',
     [{ t:'Cancelar', sec:true, fn:cerrarModal }, { t:'Conectar', fn: async b => { const t=m.querySelector('#ghTok').value.trim(); if (!t) return toast('Pega la llave', true);
       localStorage.setItem(GH_KEY, JSON.stringify({ owner:GH_REPO.owner, repo:GH_REPO.repo, token:t })); b.disabled=true; b.textContent='Probando…';
       try { await gh('data/os-robot.json',{raw:true}); } catch(e){ localStorage.removeItem(GH_KEY); b.disabled=false; b.textContent='Conectar'; return toast('La llave no funcionó ('+e.message+')', true); }
