@@ -3205,8 +3205,9 @@ async function editarInmueble(os){
   const m=modal('Referentes y costos · '+os.nombre, cuerpo, [{ t:'Cancelar', sec:true, fn:cerrarModal }, { t:'Guardar', fn: async b => {
     const dd=JSON.parse(JSON.stringify(datosT())), nc=Object.assign({}, dd.props[os.id]||{}), dec=x=>{ const y=parseFloat(String(x).replace(',','.')); return isFinite(y)?y:null; };
     m.querySelectorAll('[data-k]').forEach(i => { const k=i.dataset.k, val=i.value.trim(); nc[k] = k==='zona' ? val : /Pct$|^t[A-Z]/.test(k) ? dec(val) : (val===''?'':pesos(val)); });
-    const refsN=[0,1,2,3,4].map(i => ({ link: m.querySelector('[data-rl="'+i+'"]').value.trim().split('?')[0] }));
-    if (refsN.some(r => r.link && !/^https:\/\/(www\.)?airbnb\.[a-z.]+\/rooms\/\d+/.test(r.link))) return toast('Los referentes deben ser enlaces de Airbnb /rooms/…', true);
+    const crudos=[0,1,2,3,4].map(i => m.querySelector('[data-rl="'+i+'"]').value.trim());
+    const refsN=crudos.map(v => { const id=(v.match(/rooms\/(?:plus\/|luxury\/)?(\d{5,})/)||v.match(/^(\d{5,})$/)||[])[1]; return { link: id ? 'https://www.airbnb.com.co/rooms/'+id : '' }; });
+    const malo=crudos.findIndex((v,i) => v && !refsN[i].link); if (malo>=0) return toast('El referente '+(malo+1)+' no es un enlace de anuncio de Airbnb (debe tener /rooms/ y el número). Ábrelo en Airbnb y copia el enlace de la barra.', true);
     if ((nc.airbnbPct||15.5)+(nc.blumPct!=null?nc.blumPct:15) >= 90) return toast('Las comisiones no pueden sumar 90% o más', true);
     const antes=dd.props[os.id]||{}, cambia=['arriendo','otros','aseo','limpieza','gastoNoche','airbnbPct','blumPct','tFds','tEsp','tEvt','tTop','zona'].some(k=>String(antes[k]??'')!==String(nc[k]??'')) || JSON.stringify(antes.refs||[])!==JSON.stringify(refsN);
     nc.refs=refsN; nc.plan=nc.plan||{}; if (cambia) for (const k in nc.plan) if (k>RV.TM) delete nc.plan[k];
