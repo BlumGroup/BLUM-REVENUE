@@ -3102,7 +3102,7 @@ function multFds(cfg, H, os){
 async function cargarRev(forzar){
   if (rev && !forzar) return rev;
   if (!revCarga || forzar) revCarga = (async () => {
-    await Promise.all([reservasPlan(forzar), directorioT(forzar)]); cargarTar();
+    await Promise.all([reservasPlan(forzar), directorioT(forzar), sincronizar(forzar)]); cargarTar();
     const d=datosT(), lista=propsRC().filter(os => d.props[os.id]);
     const metas={}, st={ version:3, properties: lista.map(os => { const cfg=d.props[os.id], cb=costosBase(os), H=historial(os, fechaIni(os)); const p=propEngine(os,cfg,cb,H); metas[os.id]={cfg,cb,H}; return p; }) };
     let S=RV.cargar(st, null, { items:EVENTOS_LOCALES }, resPlan, {});
@@ -3584,6 +3584,73 @@ function pintarPpto(){
     filas.map(f=>{ const cu=f.meta?f.rv/f.meta:null; return '<tr'+(f.m===RV.TM?' style="background:var(--sage-l)"':'')+'><td><b>'+capM(f.m)+' '+f.m.slice(0,4)+'</b></td><td class="num-r"><b>'+cop(f.meta)+'</b><div class="eti">'+(f.fijo?'fijo':'se fija el día 1')+'</div></td><td class="num-r">'+(f.rv?cop(f.rv):'—')+'</td><td class="num-r">'+(f.m===RV.TM?chipPct(cu):f.rv?pctS(cu):'—')+'</td><td class="num-r">'+pctS(f.rn/f.dias)+'<div class="eti">'+f.rn+' noches</div></td></tr>'; }).join('')+'</table></div></div>';
   $('ppCuerpo').innerHTML=h;
   if (una && $('ppVar')) $('ppVar').onclick=()=>editarInmueble(pares[0].os);
+}
+
+/* ═════════ Robot de referentes: guarda en el repositorio privado y lee lo que revisa en Airbnb ═════════ */
+const GH_KEY='blum_gh', GH_REPO={owner:'BlumGroup', repo:'blum-revenue-data'};
+let MERC_GH=null, ROBOT=null, SYNC=null, PEND=0, vigT=null, subT=null; const shas={};
+function ghCfg(){ try { const g=JSON.parse(localStorage.getItem(GH_KEY)||'null'); return g&&g.token ? { owner:GH_REPO.owner, repo:GH_REPO.repo, token:g.token } : null; } catch(e){ return null; } }
+const b64dec=s=>new TextDecoder().decode(Uint8Array.from(atob(String(s).replace(/\s/g,'')), ch=>ch.charCodeAt(0)));
+const b64enc=s=>{ const b=new TextEncoder().encode(s); let o=''; for (let i=0;i<b.length;i+=0x8000) o+=String.fromCharCode.apply(null, b.subarray(i,i+0x8000)); return btoa(o); };
+async function gh(path, opt){ opt=opt||{}; const g=ghCfg(); if (!g) throw new Error('Este navegador no está conectado al robot');
+  const r=await fetch('https://api.github.com/repos/'+g.owner+'/'+g.repo+'/contents/'+path, { method:opt.method||'GET', cache:'no-store',
+    headers:Object.assign({ Authorization:'Bearer '+g.token, Accept: opt.raw?'application/vnd.github.raw+json':'application/vnd.github+json' }, opt.body?{'Content-Type':'application/json'}:{}), body:opt.body?JSON.stringify(opt.body):undefined });
+  if (r.status===404 && !opt.method) return null; if (!r.ok) throw new Error('GitHub '+r.status); return r.json(); }
+async function ghLeer(path){ const j=await gh(path); shas[path]=j?j.sha:null; return j?JSON.parse(b64dec(j.content)):null; }
+async function ghEscribir(path, obj, msg){
+  if (shas[path]===undefined) await ghLeer(path).catch(()=>{});
+  const put=async()=>{ const body={ message:msg, content:b64enc(JSON.stringify(obj,null,1)) }; if (shas[path]) body.sha=shas[path]; const j=await gh(path,{method:'PUT',body}); shas[path]=j.content.sha; };
+  try { await put(); } catch(e){ if (!/409|422/.test(e.message)) throw e; await ghLeer(path); await put(); } }
+function cargarTar(){ if (TAR) return TAR; try { TAR=JSON.parse(localStorage.getItem(T_KEY)||'null'); } catch(e){} if (!TAR||!TAR.props) TAR=JSON.parse(JSON.stringify(TAR_INICIAL));
+  Object.values(TAR.props).forEach(c=>{ if (c.airbnbPct===16&&!c.airbnbOk) { c.airbnbPct=18.45; c.airbnbOk=1; } if (c.limpieza===''||c.limpieza==null||(c.limpieza===0&&!c.limpiezaOk)) { c.limpieza=60000; c.limpiezaOk=1; } });
+  MERC=MERC_GH||MERC_DEMO; return TAR; }
+function usarMercado(mm){ if (!mm||!mm.props) return; MERC_GH={ actualizado:mm.actualizado, props:Object.assign({}, MERC_DEMO.props, mm.props) }; MERC=MERC_GH; }
+async function sincronizar(forzar){
+  if (!ghCfg()) return; if (SYNC && !forzar) return SYNC;
+  SYNC=(async()=>{
+    const [rt, mm, rb]=await Promise.all([ ghLeer('data/os-tarifas.json').catch(()=>undefined), gh('data/os-mercado.json',{raw:true}).catch(()=>null), gh('data/os-robot.json',{raw:true}).catch(()=>null) ]);
+    const loc=cargarTar(); let sube=rt===null;
+    if (rt&&rt.props){ for (const [k,v] of Object.entries(rt.props)){ const l=loc.props[k]; if (!l || String(v.actualizado||'')>String(l.actualizado||'')) loc.props[k]=v; }
+      for (const k of Object.keys(loc.props)) if (!rt.props[k] || String(loc.props[k].actualizado||'')>String(rt.props[k].actualizado||'')) sube=true;
+      try { localStorage.setItem(T_KEY, JSON.stringify(loc)); } catch(e){} }
+    if (sube) subirTar();
+    usarMercado(mm); ROBOT=rb;
+  })().catch(e=>{ SYNC=null; console.warn(e); });
+  return SYNC; }
+function subirTar(){ if (!ghCfg()) return; clearTimeout(subT); subT=setTimeout(()=>ghEscribir('data/os-tarifas.json', TAR, 'BLÜM OS: tarifas y costos').catch(e=>console.warn(e)), 2500); }
+const linksDe=x=>JSON.stringify(Object.entries((x&&x.props)||{}).map(([k,v])=>[k,(v.refs||[]).map(r=>(r&&r.link)||'')]));
+async function subirReferentes(){ const d=datosT(), out={ actualizado:new Date().toISOString(), props:{} };
+  for (const [k,v] of Object.entries(d.props)){ const l=(v.refs||[]).map(r=>r&&r.link).filter(Boolean); if (l.length) out.props[k]={ nombre:v.nombre||k, links:l }; }
+  await ghEscribir('data/os-referentes.json', out, 'BLÜM OS: referentes actualizados'); }
+async function guardarT(d){ const antes=linksDe(TAR); TAR=d; try { localStorage.setItem(T_KEY, JSON.stringify(d)); } catch(e){ throw new Error('No se pudo guardar en este navegador'); }
+  if (!ghCfg()) return; subirTar();
+  if (linksDe(d)!==antes) { try { await subirReferentes(); PEND=Date.now(); vigilarRobot(); setTimeout(()=>toast('El robot ya está revisando tus referentes en Airbnb. En unos 5 minutos aparecen aquí.'), 1500); }
+    catch(e){ setTimeout(()=>toast('Guardado, pero no se pudo avisar al robot: '+e.message, true), 1500); } } }
+function repintar(){ rev=null; const vis=document.querySelector('section:not(.oculto)'), id=vis&&vis.id;
+  if (id==='m-ppto') cargarPpto(true); else if (id==='m-proy') cargarProy(true); else if (id==='m-pricing') cargarPricing(true); }
+function vigilarRobot(){ clearInterval(vigT); const desde=new Date(PEND).toISOString(), fin=PEND+25*60e3;
+  vigT=setInterval(async()=>{ if (Date.now()>fin){ clearInterval(vigT); PEND=0; return; }
+    const rb=await gh('data/os-robot.json',{raw:true}).catch(()=>null); if (!rb||!(rb.revisado>desde)) return;
+    clearInterval(vigT); PEND=0; ROBOT=rb; usarMercado(await gh('data/os-mercado.json',{raw:true}).catch(()=>null)); repintar();
+    const malos=Object.values(rb.props||{}).reduce((a,p)=>a+Object.values(p.refs||{}).filter(r=>!r.ok).length,0);
+    toast(malos ? 'Referentes revisados. '+malos+' no se pudieron leer: revisa el enlace.' : 'Referentes revisados en Airbnb. Tarifas y presupuesto recalculados.', !!malos); }, 45000); }
+function conectarRobot(){
+  const m=modal('Conectar el robot de referentes', '<p style="line-height:1.5">El robot revisa tus referentes en Airbnb apenas guardas los enlaces y todos los días a las 6 a. m. Este navegador necesita la llave de GitHub de BLÜM (la misma de la app de tarifas) para enviarle los enlaces. Se guarda solo en este navegador.</p><label>Llave de GitHub</label><input id="ghTok" type="password" autocomplete="off" placeholder="github_pat_…">',
+    [{ t:'Cancelar', sec:true, fn:cerrarModal }, { t:'Conectar', fn: async b => { const t=m.querySelector('#ghTok').value.trim(); if (!t) return toast('Pega la llave', true);
+      localStorage.setItem(GH_KEY, JSON.stringify({ owner:GH_REPO.owner, repo:GH_REPO.repo, token:t })); b.disabled=true; b.textContent='Probando…';
+      try { await gh('data/os-robot.json',{raw:true}); } catch(e){ localStorage.removeItem(GH_KEY); b.disabled=false; b.textContent='Conectar'; return toast('La llave no funcionó ('+e.message+')', true); }
+      cerrarModal(); SYNC=null; await sincronizar(true); try { await subirReferentes(); PEND=Date.now(); vigilarRobot(); } catch(e){} toast('Robot conectado. Revisando tus referentes…'); repintar(); } }]); }
+function lineaRobot(){
+  if (!ghCfg()) return '<p class="nota-p" style="margin-top:8px"><b>Robot de referentes:</b> este navegador no está conectado. <a href="#" onclick="conectarRobot();return false">Conectar</a> para que revise tus referentes en Airbnb solo.</p>';
+  if (PEND) return '<p class="nota-p" style="margin-top:8px"><b>Robot de referentes:</b> revisando en Airbnb… (unos 5 minutos; esta pantalla se actualiza sola)</p>';
+  const r=ROBOT&&ROBOT.revisado; return '<p class="nota-p" style="margin-top:8px"><b>Robot de referentes:</b> '+(r?'última revisión '+esc(fechaLarga(ROBOT.fecha))+' a las '+new Date(r).toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',timeZone:'America/Bogota'}):'aún no ha revisado')+' · revisa solo cuando cambias los enlaces y cada día a las 6 a. m.</p>'; }
+function tablaRefs(p){
+  const cs=p.competitors.filter(c=>c.link); if (!cs.length) return '';
+  const d30=Array.from({length:30},(_,i)=>RV.addDays(RV.T,i)), est=(ROBOT&&ROBOT.props&&ROBOT.props[p.osId]&&ROBOT.props[p.osId].refs)||{};
+  const fila=c=>{ const ult=c.obs.map(o=>o.checked).sort().pop(), obs=c.obs.filter(o=>o.checked===ult && d30.indexOf(o.date)>=0), oc=obs.filter(o=>o.status==='x').length, pr=obs.filter(o=>o.status!=='x'&&o.price>0).map(o=>o.price).sort((a,b)=>a-b), med=pr.length?pr[Math.floor((pr.length-1)/2)]:0, e=est[c.id];
+    const sinDato = e&&e.error ? '<span class="eti" style="color:#b42318">no se pudo leer</span>' : ghCfg() ? '<span class="eti">en revisión</span>' : '<span class="eti">sin revisar</span>';
+    return '<tr><td><a href="'+esc(c.link)+'" target="_blank" rel="noopener">'+esc(c.name)+'</a></td><td class="num-r">'+(obs.length? oc+' de '+obs.length+' noches':sinDato)+'</td><td class="num-r">'+(med?cop(med):(e&&e.aviso?'<span class="eti">sin precio</span>':'—'))+'</td><td class="num-r">'+(ult?esc(fechaLarga(ult)):'—')+'</td></tr>'; };
+  return '<div class="card" style="margin-bottom:14px"><h3 class="tit-card">Tus 5 referentes · próximos 30 días</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Referente</th><th class="num-r">Ocupadas</th><th class="num-r">Precio por noche</th><th class="num-r">Revisado</th></tr>'+cs.map(fila).join('')+'</table></div><p class="nota-p" style="margin-top:8px">Precio = lo que paga el huésped por noche en una estadía de 2 noches. Cada día tu tarifa se ajusta hasta ±15% hacia lo que cobran ellos esa fecha (+8% si la mayoría está llena) y nunca baja de tu punto de equilibrio.</p>'+lineaRobot()+'</div>';
 }
 
 </script>
