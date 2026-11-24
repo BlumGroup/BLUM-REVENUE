@@ -509,6 +509,12 @@ textarea{min-height:70px;resize:vertical}
         <div id="ppCuerpo"></div>
       </section>
 
+      <!-- PRICING -->
+      <section id="m-pricing" class="oculto">
+        <div class="herr"><select id="prProp"></select><button class="btn sec chico" id="prAct" type="button">Actualizar</button></div>
+        <div id="prCuerpo"></div>
+      </section>
+
       <!-- PROYECCIONES -->
       <section id="m-proy" class="oculto">
         <div class="herr"><select id="pyProp"></select><button class="btn sec chico" id="pyAct" type="button">Actualizar</button></div>
@@ -539,6 +545,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbwt5x81bCGOct0KiRp6FHAT
 /* ═════════════════════════════════ */
 
 const ICON = {
+  pricing:'<path d="M20 12l-8 8-9-9V3h8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
   aseo:'<path d="M14 3l-4 9"/><path d="M6 12h10l2 9H4z"/><path d="M9 16v5M13 16v5"/>',
   panel:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
   bandeja:'<path d="M4 13h4l2 3h4l2-3h4"/><path d="M5 5h14l1 8v6H4v-6z"/>',
@@ -577,11 +584,12 @@ const MODULOS = [
   { id:'pyg', sec:'Finanzas', t:'P&G', i:'pyg', d:'Estado de resultados por negocio (Inmobiliaria por canal, Consultoría) y consolidado, mes a mes.' },
   { id:'honorarios', sec:'Finanzas', t:'Honorarios', i:'honor', fase:'Fase 4', d:'Pagos al equipo por persona, mes y negocio.' },
   { id:'presupuestos', sec:'Estrategia', t:'Presupuestos', i:'ppto' },
+  { id:'pricing', sec:'Estrategia', t:'Pricing', i:'pricing' },
   { id:'proyecciones', sec:'Estrategia', t:'Proyecciones', i:'proy' },
   { id:'marketing', sec:'Estrategia', t:'Marketing', i:'mkt', fase:'Siguiente etapa', d:'Inversión en pauta, origen de reservas y clientes, y retorno por canal.' },
   { id:'configuracion', sec:'Configuración', t:'Usuarios y listas', i:'ajustes', fase:'Fase 2', d:'Usuarios y roles, categorías, cuentas y listas del sistema.' }
 ];
-const VISTA = { panel:'m-panel', bandeja:'m-bandeja', movimientos:'m-movimientos', reservas:'m-reservas', propiedades:'m-propiedades', propietarios:'m-propietarios', contratos:'m-contratos', servicios:'m-servicios', clientes:'m-clientes', caja:'m-caja', liquidaciones:'m-liquidaciones', pyg:'m-pyg', presupuestos:'m-ppto', proyecciones:'m-proy', aseos:'m-aseos' };
+const VISTA = { panel:'m-panel', bandeja:'m-bandeja', movimientos:'m-movimientos', reservas:'m-reservas', propiedades:'m-propiedades', propietarios:'m-propietarios', contratos:'m-contratos', servicios:'m-servicios', clientes:'m-clientes', caja:'m-caja', liquidaciones:'m-liquidaciones', pyg:'m-pyg', presupuestos:'m-ppto', pricing:'m-pricing', proyecciones:'m-proy', aseos:'m-aseos' };
 const DIRECTORIO = ['propiedades','propietarios','contratos','servicios','clientes'];
 
 const LS = { tok:'blumos_tok', ses:'blumos_ses', cat:'blumos_cat2', lista:'blumos_lista_', bandeja:'blumos_bandeja', panel:'blumos_panel', res:'blumos_res_' };
@@ -689,6 +697,7 @@ function ir(id, sub){
   if (m.id==='liquidaciones') cargarLiquidaciones(true);
   if (m.id==='pyg') cargarPyg();
   if (m.id==='presupuestos') cargarPpto();
+  if (m.id==='pricing') cargarPricing();
   if (m.id==='proyecciones') cargarProy();
   if (m.id==='aseos') cargarAseos();
 }
@@ -1884,7 +1893,7 @@ function market(p,d){return cached('mk'+p.id+d,()=>{const ent=[];for(const c of 
 function pace(p,d,lead){if(!p.paceOn||lead<0||lead>45||!(p.stays||[]).some(x=>x.end>=addDays(T,-60)))return null;let t=0,b=0;for(let i=-3;i<=3;i++){const x=addDays(d,i);if(x<T||blocked(p,x))continue;t++;if(stayOn(p,x))b++}if(t<4)return null;const e=clamp(num(p.occ)/100,.05,.95)*Math.exp(-lead/num(p.avgLead,21)),dl=b/t-e;if(Math.abs(dl)<.12)return null;return {label:`Ritmo ${dl>0?'adelantado':'atrasado'} (${Math.round(b/t*100)}% vs ${Math.round(e*100)}% esperado)`,m:1+clamp(dl*.35,-.1,.15)}}
 function rec(p,d){return cached('r'+p.id+d,()=>{const lead=diff(T,d),F=[];const {t,ev}=tierOf(p,d),M=mult(p,t);let x=num(p.base)*M;
  F.push({l:TN[t]+(M!==1?' ×'+fx(M):'')+(ev&&t!=='sem'&&t!=='fds'?' · '+ev.name:''),m:M,k:'d'});const nominal=x;
- const mk=market(p,d);if(mk.rate){mk.cmp=Math.max(0,mk.rate-gv(p));const wt=num(p.compWeight,50)/100*(mk.sim?.5:1),f=clamp(1+wt*(mk.cmp/x-1),.85,1.15);if(Math.abs(f-1)>=.01){F.push({l:`Referentes${mk.sim?' (días similares)':''} cobran ${money(mk.rate)}`,m:f,k:'m'});x*=f}}
+ const mk=market(p,d);if(mk.rate&&!(mk.sim&&t!=='sem'&&t!=='fds')){mk.cmp=Math.max(0,mk.rate-gv(p));const wt=num(p.compWeight,50)/100*(mk.sim?.5:1),f=clamp(1+wt*(mk.cmp/x-1),.85,1.15);if(Math.abs(f-1)>=.01){F.push({l:`Referentes${mk.sim?' (días similares)':''} cobran ${money(mk.rate)}`,m:f,k:'m'});x*=f}}
  if(mk.checked>=3&&mk.un/mk.checked>=.6){F.push({l:`${mk.un} de ${mk.checked} referentes llenos`,m:1.08,k:'m'});x*=1.08}
  let ms=Math.max(1,num(p.minStay,1),ev?.min||0);if(lead>=0&&lead<=3&&!ev?.min)ms=1;
  let price=Math.max(rp(x),num(p.min));if(num(p.manMax))price=Math.min(price,num(p.manMax));const cl=rp(x)<num(p.min)?'min':'';const ov=p.overrides[d];if(ov){if(ov.price)price=num(ov.price);if(ov.minStay)ms=num(ov.minStay)}
@@ -1959,437 +1968,1067 @@ let rev=null, revCarga=null, resPlan=null, resHist=null, osDir=null, aseoSem=0;
 let TAR=null, MERC=null;
 /* Demo: todo se guarda en este navegador. Mercado de referentes: última revisión de Claude (muestra). */
 const MERC_DEMO={
- "actualizado": "2026-11-23",
+ "actualizado": "2026-11-24",
  "props": {
   "prxkpydpfg": {
    "1303832779839545763": [
     {
-     "date": "2026-11-23",
-     "status": "x",
-     "price": 0,
-     "checked": "2026-11-23"
-    },
-    {
      "date": "2026-11-24",
      "status": "ok",
-     "price": 201000,
-     "checked": "2026-11-23"
+     "price": 199000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-25",
      "status": "ok",
-     "price": 201000,
-     "checked": "2026-11-23"
+     "price": 199000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-26",
      "status": "ok",
-     "price": 217000,
-     "checked": "2026-11-23"
+     "price": 199000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-27",
      "status": "ok",
      "price": 217000,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-28",
      "status": "ok",
      "price": 217000,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-29",
      "status": "ok",
-     "price": 210000,
-     "checked": "2026-11-23"
+     "price": 217000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-30",
      "status": "ok",
-     "price": 210000,
-     "checked": "2026-11-23"
+     "price": 217000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-01",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-02",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-03",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-04",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-05",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-06",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-07",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-08",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-09",
+     "status": "ok",
+     "price": 216000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-10",
+     "status": "ok",
+     "price": 216000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-11",
+     "status": "ok",
+     "price": 216000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-12",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-13",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-14",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-15",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-16",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-17",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-18",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-19",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-20",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-21",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-22",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-23",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-24",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-25",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-26",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-27",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-28",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
     }
    ],
    "1357248863972334403": [
     {
-     "date": "2026-11-23",
-     "status": "x",
-     "price": 0,
-     "checked": "2026-11-23"
-    },
-    {
      "date": "2026-11-24",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-25",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-26",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-27",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-28",
      "status": "ok",
-     "price": 213000,
-     "checked": "2026-11-23"
+     "price": 150000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-29",
      "status": "ok",
-     "price": 213000,
-     "checked": "2026-11-23"
+     "price": 150000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-30",
      "status": "ok",
-     "price": 223000,
-     "checked": "2026-11-23"
+     "price": 150000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-01",
      "status": "ok",
-     "price": 241000,
-     "checked": "2026-11-23"
+     "price": 162000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-02",
      "status": "ok",
-     "price": 241000,
-     "checked": "2026-11-23"
+     "price": 162000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-03",
      "status": "ok",
-     "price": 283000,
-     "checked": "2026-11-23"
+     "price": 162000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-04",
      "status": "ok",
-     "price": 291000,
-     "checked": "2026-11-23"
+     "price": 199000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-05",
      "status": "ok",
-     "price": 291000,
-     "checked": "2026-11-23"
+     "price": 199000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-06",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-07",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-08",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-09",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-10",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-11",
+     "status": "ok",
+     "price": 199000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-12",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-13",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-14",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-15",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-16",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-17",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-18",
+     "status": "ok",
+     "price": 194000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-19",
+     "status": "ok",
+     "price": 194000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-20",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-21",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-22",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-23",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-24",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-25",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-26",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-27",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-28",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
     }
    ],
    "932555342119626549": [
     {
-     "date": "2026-11-23",
-     "status": "x",
-     "price": 0,
-     "checked": "2026-11-23"
-    },
-    {
      "date": "2026-11-24",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-25",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-26",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-27",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-28",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-29",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-30",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-01",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-02",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-03",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-04",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-05",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-06",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-07",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-08",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-09",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-10",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-11",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-12",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-13",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-14",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-15",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-16",
+     "status": "ok",
+     "price": 222000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-17",
+     "status": "ok",
+     "price": 222000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-18",
+     "status": "ok",
+     "price": 222000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-19",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-20",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-21",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-22",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-23",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-24",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-25",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-26",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-27",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-28",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
     }
    ],
    "1187921344071309723": [
     {
-     "date": "2026-11-23",
-     "status": "ok",
-     "price": 249000,
-     "checked": "2026-11-23"
-    },
-    {
      "date": "2026-11-24",
      "status": "ok",
      "price": 231000,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-25",
      "status": "ok",
      "price": 231000,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-26",
      "status": "ok",
-     "price": 256000,
-     "checked": "2026-11-23"
+     "price": 231000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-27",
      "status": "ok",
      "price": 280000,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-28",
      "status": "ok",
      "price": 280000,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-29",
      "status": "ok",
      "price": 280000,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-30",
      "status": "ok",
      "price": 280000,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-01",
      "status": "ok",
      "price": 280000,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-02",
      "status": "ok",
      "price": 280000,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-03",
      "status": "ok",
      "price": 285000,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-04",
      "status": "ok",
      "price": 285000,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-05",
      "status": "ok",
      "price": 285000,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-06",
      "status": "ok",
      "price": 280000,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-07",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-08",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-09",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-10",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-11",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-12",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-13",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-14",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-15",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-16",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-17",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-18",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-19",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-20",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-21",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-22",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-23",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-24",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-25",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-26",
+     "status": "ok",
+     "price": 280000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-27",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-28",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
     }
    ],
    "1350930961990543298": [
     {
-     "date": "2026-11-23",
-     "status": "x",
-     "price": 0,
-     "checked": "2026-11-23"
-    },
-    {
      "date": "2026-11-24",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-25",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-26",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-27",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-28",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-29",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-11-30",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-01",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-02",
      "status": "x",
      "price": 0,
-     "checked": "2026-11-23"
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-03",
      "status": "ok",
-     "price": 217000,
-     "checked": "2026-11-23"
+     "price": 214000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-04",
      "status": "ok",
-     "price": 217000,
-     "checked": "2026-11-23"
+     "price": 214000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-05",
      "status": "ok",
-     "price": 217000,
-     "checked": "2026-11-23"
+     "price": 214000,
+     "checked": "2026-11-24"
     },
     {
      "date": "2026-12-06",
      "status": "ok",
-     "price": 213000,
-     "checked": "2026-11-23"
+     "price": 210000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-07",
+     "status": "ok",
+     "price": 210000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-08",
+     "status": "ok",
+     "price": 210000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-09",
+     "status": "ok",
+     "price": 210000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-10",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-11",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-12",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-13",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-14",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-15",
+     "status": "ok",
+     "price": 215000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-16",
+     "status": "ok",
+     "price": 215000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-17",
+     "status": "ok",
+     "price": 215000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-18",
+     "status": "ok",
+     "price": 217000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-19",
+     "status": "ok",
+     "price": 217000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-20",
+     "status": "ok",
+     "price": 217000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-21",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-22",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-23",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-24",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-25",
+     "status": "x",
+     "price": 0,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-26",
+     "status": "ok",
+     "price": 217000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-27",
+     "status": "ok",
+     "price": 217000,
+     "checked": "2026-11-24"
+    },
+    {
+     "date": "2026-12-28",
+     "status": "ok",
+     "price": 217000,
+     "checked": "2026-11-24"
     }
    ]
   }
@@ -2505,14 +3144,14 @@ function selProps(id, conTodas, soloConfig){
 const ultRev=p=>p.competitors.flatMap(c=>c.obs).map(o=>o.checked).filter(Boolean).sort().pop()||'';
 function tablaRefs(p){
   const cs=p.competitors.filter(c=>c.link); if (!cs.length) return '';
-  const d14=Array.from({length:14},(_,i)=>RV.addDays(RV.T,i));
+  const d14=Array.from({length:30},(_,i)=>RV.addDays(RV.T,i));
   const fila=c=>{ const ult=c.obs.map(o=>o.checked).sort().pop(), obs=c.obs.filter(o=>o.checked===ult && d14.indexOf(o.date)>=0), oc=obs.filter(o=>o.status==='x').length, pr=obs.filter(o=>o.status!=='x'&&o.price>0).map(o=>o.price).sort((a,b)=>a-b), med=pr.length?pr[Math.floor((pr.length-1)/2)]:0;
     return '<tr><td><a href="'+esc(c.link)+'" target="_blank" rel="noopener">'+esc(c.name)+'</a></td><td class="num-r">'+(obs.length? oc+' de '+obs.length+' noches':'<span class="eti">sin revisar</span>')+'</td><td class="num-r">'+(med?cop(med):'—')+'</td><td class="num-r">'+(ult?esc(fechaLarga(ult)):'—')+'</td></tr>'; };
-  return '<div class="card" style="margin-bottom:14px"><h3 class="tit-card">Mercado · tus 5 referentes (próximos 14 días)</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Referente</th><th class="num-r">Ocupadas</th><th class="num-r">Precio por noche</th><th class="num-r">Revisado</th></tr>'+cs.map(fila).join('')+'</table></div><p class="nota-p" style="margin-top:8px">Precio = lo que paga el huésped por noche en una estadía de 2 noches. Cada día tu tarifa se ajusta hasta ±15% hacia lo que cobran ellos esa fecha (+8% si la mayoría está llena) y nunca baja de tu punto de equilibrio.</p></div>';
+  return '<div class="card" style="margin-bottom:14px"><h3 class="tit-card">Tus 5 referentes · próximos 30 días</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Referente</th><th class="num-r">Ocupadas</th><th class="num-r">Precio por noche</th><th class="num-r">Revisado</th></tr>'+cs.map(fila).join('')+'</table></div><p class="nota-p" style="margin-top:8px">Precio = lo que paga el huésped por noche en una estadía de 2 noches. Cada día tu tarifa se ajusta hasta ±15% hacia lo que cobran ellos esa fecha (+8% si la mayoría está llena) y nunca baja de tu punto de equilibrio.</p></div>';
 }
 function informeHtml(p){
   const a=p.auto||{}, d14=Array.from({length:14},(_,i)=>RV.addDays(RV.T,i)), libres=d14.filter(d=>!RV.occ(p,d)), r0=RV.rec(p,RV.T);
-  let ck=0, un=0; d14.forEach(d=>{ const r=RV.rec(p,d); ck+=r.mk.checked||0; un+=r.mk.un||0; }); const dem=ck?un/ck:null;
+  const dem=ocupMercado(p,30);
   const mHoy=hoy().slice(0,7), pn=planNeto(p,mHoy), re=realMes(p.osId,mHoy), falta=pn?Math.max(0,pn.meta-re.v):0;
   const fuertes=libres.map(d=>RV.rec(p,d)).filter(r=>r.t!=='sem'||(r.mk.checked>=3&&r.mk.un/r.mk.checked>=.6)).slice(0,4);
   const flojas=libres.map(d=>RV.rec(p,d)).filter(r=>r.t==='sem'&&r.cl==='min').slice(0,4);
@@ -2523,7 +3162,7 @@ function informeHtml(p){
   if (a.mkt && a.mkt<a.floor) acc.push(['El mercado está por debajo de tu equilibrio', 'Los referentes cobran '+cop(a.mkt)+' entre semana y tu mínimo es '+cop(a.floor)+'. Compite con estadía mínima, fotos y reseñas, no con precio.']);
   return '<div class="card" style="margin-bottom:14px"><h3 class="tit-card">Pricing de hoy · '+esc(fechaLarga(hoy()))+'</h3><p style="font-size:.95rem;line-height:1.55">'+
     (RV.occ(p,RV.T)?'Hoy está reservada. ':'Publica hoy <b>'+cop(r0.price)+'</b> ('+esc(RV.TN[r0.t])+'). ')+
-    (dem!=null?'Tus referentes tienen ocupado el <b>'+pctS(dem)+'</b> de las próximas 2 semanas'+(a.mkt?' y cobran ~'+cop(a.mkt)+' entre semana'+(a.mktWe?' y '+cop(a.mktWe)+' el fin de semana':''):'')+'. ':'Aún no hay análisis de los referentes. ')+
+    (dem!=null?'Tus referentes tienen ocupado el <b>'+pctS(dem)+'</b> de los próximos 30 días'+(a.mkt?' y cobran ~'+cop(a.mkt)+' entre semana'+(a.mktWe?' y '+cop(a.mktWe)+' el fin de semana':''):'')+'. ':'Aún no hay análisis de los referentes. ')+
     (pn?'Este mes llevas '+cop(re.v)+' de '+cop(pn.meta)+' netos ('+pctS(pn.meta?re.v/pn.meta:null)+').':'')+'</p>'+
     acc.map((x,i)=>'<div class="hist"><b>'+(i+1)+'. '+esc(x[0])+'</b><div>'+esc(x[1])+'</div></div>').join('')+'</div>';
 }
@@ -2611,13 +3250,7 @@ function pintarProy(){
   let h='<div style="display:flex;justify-content:flex-end;margin:-6px 0 10px"><button class="btn sec chico" id="pyCfg" type="button">Referentes y costos</button></div>'+
     '<div class="kpis"><div class="kpi"><div class="eti">Punto de equilibrio</div><div class="v">'+cop(a.floor)+'</div><div class="h">Tarifa mínima por noche: cubre costos fijos, aseo y comisiones al 70% de ocupación</div></div>'+
     '<div class="kpi"><div class="eti">Tarifa base (entre semana)</div><div class="v">'+cop(base)+'</div><div class="h">'+esc(p.baseOrigen||'')+'</div></div>'+
-    '<div class="kpi"><div class="eti">Tu historial</div><div class="v">'+(H.occ!=null?pctS(H.occ):'—')+'</div><div class="h">'+(H.n?'Ocupación · '+H.n+' noches vendidas desde '+esc(fechaLarga(H.desde))+' · tarifa prom. ≈ '+cop(H.adr):'Aún sin reservas registradas')+'</div></div>'+
-    '<div class="kpi"><div class="eti">Referentes · entre semana / fin de semana</div><div class="v">'+(a.mkt?cop(a.mkt):'—')+'</div><div class="h">'+(a.mktWe?'Fin de semana '+cop(a.mktWe)+' · ':'')+(p.refLinks? p.refLinks+' de 5 referentes'+(ultRev(p)?' · revisados '+esc(fechaLarga(ultRev(p))):' · pendientes de análisis') : 'Agrega los 5 referentes')+'</div></div></div>'+tablaRefs(p)+informeHtml(p);
-  h+='<div class="card"><h3 class="tit-card">Tarifas sugeridas por tipo de día</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Tipo de día</th><th class="num-r">Multiplicador</th><th class="num-r">Tarifa sugerida</th></tr>'+
-    RV.TIERS.map(([k,l]) => { const M=RV.mult(p,k); return '<tr><td><b>'+l+'</b><div class="eti" style="text-transform:none;letter-spacing:0">'+RV.TDESC[k]+'</div></td><td class="num-r">'+(k==='sem'?'base':'×'+RV.fx(M))+'</td><td class="num-r"><b>'+cop(Math.max(RV.rp(base*M),min))+'</b></td></tr>'; }).join('')+'</table></div></div>';
-  const dias=Array.from({length:14},(_,i)=>RV.addDays(RV.T,i));
-  h+='<div class="card" style="margin-top:14px"><h3 class="tit-card">Tarifas para publicar · próximas 2 semanas</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Fecha</th><th class="num-r">Tarifa</th><th>Tipo de día</th><th class="num-r">Mín. noches</th><th class="num-r">Referentes</th></tr>'+
-    dias.map(d => { const r=RV.rec(p,d), o=RV.occ(p,d); return '<tr'+(o?' style="opacity:.5"':'')+'><td><b>'+esc(fechaLarga(d))+'</b></td><td class="num-r">'+(o?'<span class="eti">Reservada</span>':'<b>'+cop(r.price)+'</b>')+'</td><td>'+esc(RV.TN[r.t])+(r.ev&&r.t!=='sem'&&r.t!=='fds'?' · '+esc(r.ev.name):'')+'</td><td class="num-r">'+(o?'':r.ms)+'</td><td class="num-r">'+(r.mk.rate?cop(r.mk.rate)+' · ':'')+(r.mk.checked?r.mk.un+' de '+r.mk.checked+' ocupados':'—')+'</td></tr>'; }).join('')+'</table></div></div>';
+    '<div class="kpi"><div class="eti">Tu historial</div><div class="v">'+(H.occ!=null?pctS(H.occ):'—')+'</div><div class="h">'+(H.n?'Ocupación · '+H.n+' noches vendidas desde '+esc(fechaLarga(H.desde))+' · tarifa prom. ≈ '+cop(H.adr):'Aún sin reservas registradas')+'</div></div>'+'</div>';
   const G={}; mesesPlan().filter(m => m>=hoy().slice(0,7)).forEach(m => (G[trimDe(m)]=G[trimDe(m)]||[]).push(m));
   let filas='', Y={b:0,n:0,d:0,net:0};
   Object.keys(G).forEach(g => { let qb=0,qn=0,qd=0; const rs=G[g].map(m => { const pn=planNeto(p,m)||{}, r=realMes(os.id,m); qb+=pn.bruto||0; qn+=pn.n||0; qd+=diasMes(m); if (g!=='Cierre 2026'){ Y.b+=pn.bruto||0; Y.n+=pn.n||0; Y.d+=diasMes(m); Y.net+=pn.meta||0; }
@@ -2629,6 +3262,48 @@ function pintarProy(){
   $('pyCuerpo').innerHTML=h; $('pyCfg').onclick=()=>editarInmueble(os); $('pyRe').onclick=()=>{ if(!confirmarSimple('¿Recalcular la proyección de los meses futuros con el historial y los costos de hoy? El mes en curso se mantiene para medirlo.'))return; const d=JSON.parse(JSON.stringify(datosT())); const x=d.props[os.id]; if(x&&x.plan){ for(const k in x.plan) if(k>RV.TM) delete x.plan[k]; } guardarT(d,'Recalcular proyección: '+os.nombre).then(()=>{ rev=null; cargarProy(true); }).catch(e=>toast(e.message,true)); };
 }
 
+
+/* ───── Pricing ───── */
+let prMes=null;
+async function cargarPricing(forzar){
+  const C=$('prCuerpo'); if (!rev||forzar) C.innerHTML=esqueleto(3);
+  try { await cargarRev(forzar); } catch(e){ return avisoRev(C, e); }
+  const ps=selProps('prProp', false, false);
+  $('prProp').onchange=()=>{ lsSet('blum_ppto_sel',$('prProp').value); pintarPricing(); }; $('prAct').onclick=()=>cargarPricing(true);
+  if (!ps.length) { C.innerHTML='<div class="vacio">No hay propiedades activas de renta corta.</div>'; return; }
+  pintarPricing();
+}
+const TCOL={sem:'var(--cream2)',fds:'var(--sage-l)',esp:'#F6E7C8',evt:'#F3D3B5',top:'var(--red-l)'};
+function calendarioTarifas(p, m){
+  const ini=m+'-01', n=diasMes(m), off=(new Date(+m.slice(0,4),+m.slice(5)-1,1).getDay()+6)%7, cel=[];
+  for (let i=0;i<off;i++) cel.push('<div></div>');
+  for (let i=1;i<=n;i++){ const d=m+'-'+String(i).padStart(2,'0'), r=RV.rec(p,d), o=RV.occ(p,d), pas=d<RV.T;
+    cel.push('<div class="pr-d'+(d===RV.T?' hoy':'')+'" style="background:'+(o||pas?'var(--paper)':TCOL[r.t])+';'+(pas?'opacity:.45':'')+'"><div class="pr-n">'+i+'</div>'+
+      (o? '<div class="pr-res">Reservada</div>' : pas ? '' : '<div class="pr-p">'+cop(r.price)+'</div><div class="pr-t">'+esc(r.ev&&r.t!=='sem'&&r.t!=='fds'?r.ev.name:RV.TN[r.t])+'</div>'+(r.mk.checked?'<div class="pr-m">Ref. '+(r.mk.rate?cop(r.mk.rate):'—')+' · '+r.mk.un+'/'+r.mk.checked+' llenos</div>':''))+'</div>'); }
+  return '<div class="pr-cal">'+['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map(x=>'<div class="pr-h">'+x+'</div>').join('')+cel.join('')+'</div>';
+}
+function pintarPricing(){
+  const os=propsRC().find(p => p.id===$('prProp').value); if (!os) return; const p=revDe(os);
+  if (!p) { $('prCuerpo').innerHTML='<div class="card"><h3 class="tit-card">'+esc(os.nombre)+' aún no tiene referentes ni costos</h3><p class="nota-p">Agrega los costos fijos y los 5 referentes del mercado. Con eso se calcula el pricing competitivo, sin bajar de tus costos.</p><button class="btn" id="prCfg" style="margin-top:12px">Agregar referentes y costos</button></div>'; $('prCfg').onclick=()=>editarInmueble(os); return; }
+  const a=p.auto||{}, base=Number(p.base)||0, min=Number(p.min)||0, meses=[RV.TM, RV.addMonths(RV.TM,1), RV.addMonths(RV.TM,2)]; if (!prMes||meses.indexOf(prMes)<0) prMes = (diasMes(RV.TM)-(+RV.T.slice(8))<10) ? meses[1] : meses[0];
+  let h='<div style="display:flex;justify-content:flex-end;margin:-6px 0 10px"><button class="btn sec chico" id="prCfg" type="button">Referentes y costos</button></div>'+
+    '<div class="kpis"><div class="kpi"><div class="eti">Punto de equilibrio</div><div class="v">'+cop(a.floor)+'</div><div class="h">Ninguna tarifa baja de aquí: cubre costos fijos, aseo y comisiones al 70% de ocupación</div></div>'+
+    '<div class="kpi"><div class="eti">Tarifa base (entre semana)</div><div class="v">'+cop(base)+'</div><div class="h">'+esc(p.baseOrigen||'')+'</div></div>'+
+    '<div class="kpi"><div class="eti">Mercado · entre semana</div><div class="v">'+(a.mkt?cop(a.mkt):'—')+'</div><div class="h">Mediana de tus referentes'+(a.mktWe?' · fin de semana '+cop(a.mktWe):'')+'</div></div>'+
+    '<div class="kpi"><div class="eti">Ocupación del mercado</div><div class="v">'+pctS(ocupMercado(p,30))+'</div><div class="h">Noches ya ocupadas de tus referentes · próximos 30 días'+(ultRev(p)?' · revisado '+esc(fechaLarga(ultRev(p))):'')+'</div></div></div>'+
+    informeHtml(p)+
+    '<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3 class="tit-card" style="margin:0">Calendario de tarifas</h3><div class="seg">'+meses.map(m=>'<button type="button" data-prm="'+m+'" class="'+(m===prMes?'on':'')+'">'+capM(m)+'</button>').join('')+'</div></div>'+
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 8px">'+RV.TIERS.map(([k,l])=>'<span class="eti" style="text-transform:none;letter-spacing:0;display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;background:'+TCOL[k]+';border:1px solid var(--line)"></span>'+l+'</span>').join('')+'</div>'+
+    calendarioTarifas(p, prMes)+'<p class="nota-p" style="margin-top:8px">Precio de la noche para publicar en Airbnb. "Ref." = lo que cobran tus referentes esa noche y cuántos de los 5 ya están ocupados.</p></div>'+
+    '<div class="card" style="margin-top:14px"><h3 class="tit-card">Cómo se arma tu tarifa</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Tipo de día</th><th class="num-r">Multiplicador</th><th class="num-r">Tarifa</th></tr>'+
+    RV.TIERS.map(([k,l]) => { const M=RV.mult(p,k); return '<tr><td><b>'+l+'</b><div class="eti" style="text-transform:none;letter-spacing:0">'+RV.TDESC[k]+'</div></td><td class="num-r">'+(k==='sem'?'base':'×'+RV.fx(M))+'</td><td class="num-r"><b>'+cop(Math.max(RV.rp(base*M),min))+'</b></td></tr>'; }).join('')+
+    '</table></div><p class="nota-p" style="margin-top:8px">Cada noche: tarifa del tipo de día, ajustada hasta ±15% hacia lo que cobran tus referentes esa fecha y +8% si 3 o más de ellos están ocupados. Nunca por debajo del punto de equilibrio.</p></div>'+
+    tablaRefs(p);
+  $('prCuerpo').innerHTML=h; $('prCfg').onclick=()=>editarInmueble(os);
+  $('prCuerpo').querySelectorAll('[data-prm]').forEach(b=>b.onclick=()=>{ prMes=b.dataset.prm; pintarPricing(); });
+}
+function ocupMercado(p, n){ let ck=0, un=0; for (let i=0;i<n;i++){ const r=RV.rec(p,RV.addDays(RV.T,i)); ck+=r.mk.checked||0; un+=r.mk.un||0; } return ck? un/ck : null; }
+(function(){ const st=document.createElement('style'); st.textContent='.pr-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}.pr-h{font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:2px 4px}.pr-d{border:1px solid var(--line);border-radius:10px;padding:7px;min-height:92px}.pr-d.hoy{box-shadow:0 0 0 2px var(--ink)}.pr-n{font-size:.75rem;color:var(--muted)}.pr-p{font-weight:700;font-size:.95rem;margin-top:2px}.pr-t{font-size:.7rem;line-height:1.2;margin-top:2px}.pr-m{font-size:.66rem;color:var(--muted);margin-top:3px;line-height:1.2}.pr-res{font-size:.72rem;color:var(--muted);margin-top:6px}.seg button.on{background:var(--ink);color:#fff}@media(max-width:900px){.pr-cal{gap:3px}.pr-d{padding:4px;min-height:70px}.pr-p{font-size:.72rem}.pr-t,.pr-m{display:none}}'; document.head.appendChild(st); })();
 /* ───── Aseos ───── */
 const ASEO_SALIDA='11:00 a. m.', ASEO_LLEGADA='3:00 p. m.';
 (function(){ const st=document.createElement('style'); st.textContent='.as-sem{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}.as-dia{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:8px;min-height:150px}.as-dia.hoy{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}.as-cab{display:flex;justify-content:space-between;align-items:baseline;padding:2px 4px 8px;border-bottom:1px solid var(--line);margin-bottom:8px}.as-cab span{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.as-cab b{font-size:1.2rem}.as-item{display:flex;gap:8px;align-items:flex-start;background:var(--sage-l);border-radius:8px;padding:8px;margin-bottom:6px;cursor:pointer}.as-item.urg{background:var(--red-l)}.as-item.ok{opacity:.5}.as-item.ok .as-p{text-decoration:line-through}.as-item input{width:16px;height:16px;margin-top:2px;flex:none}.as-h{font-size:.72rem;font-weight:600;color:var(--muted)}.as-p{font-weight:600;font-size:.86rem;line-height:1.25}.as-d{font-size:.72rem;color:var(--muted);margin-top:2px}.as-item.urg .as-d{color:var(--red);font-weight:600}.as-vacio{color:var(--muted);text-align:center;padding:14px 0;font-size:.8rem}@media(max-width:900px){.as-sem{grid-template-columns:1fr}.as-dia{min-height:0}}'; document.head.appendChild(st); })();
