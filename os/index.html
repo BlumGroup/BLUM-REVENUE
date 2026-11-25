@@ -3191,7 +3191,7 @@ function informeHtml(p){
 async function editarInmueble(os){
   try { await directorioT(); cargarTar(); } catch(e){ return toast(e.message,true); }
   const d=datosT(), c=d.props[os.id]||{}, cb=costosBase(os), v=x=>x==null?'':x;
-  const n=(l,k,ph,h)=>'<div><label>'+l+'</label><input data-k="'+k+'" inputmode="numeric" value="'+esc(v(c[k]))+'" placeholder="'+(ph||'0')+'">'+(h?'<div class="eti" style="text-transform:none;letter-spacing:0;margin-top:3px">'+h+'</div>':'')+'</div>';
+  const n=(l,k,ph,h)=>'<div><label>'+l+'</label><input data-k="'+k+'" inputmode="numeric" value="'+esc(v(c[k]))+'" placeholder="ej. '+(ph||'0')+'">'+(h?'<div class="eti" style="text-transform:none;letter-spacing:0;margin-top:3px">'+h+'</div>':'')+'</div>';
   const refs=Array.from({length:5},(_,i)=>(c.refs||[])[i]||{});
   const cuerpo='<p class="nota-p" style="margin-bottom:10px">Con los costos, tu historial de reservas y los referentes se calculan el punto de equilibrio, las tarifas por tipo de día y el presupuesto.</p>'+
     '<h3 class="tit-card">Costos fijos del mes</h3>'+
@@ -3199,16 +3199,17 @@ async function editarInmueble(os){
     '<div class="grid dos" style="gap:10px">'+n('Arriendo o cuota','arriendo')+n('Otros fijos','otros','0','Predial, seguro, mantenimiento')+'</div>'+
     '<h3 class="tit-card" style="margin-top:14px">Por reserva y comisiones</h3><div class="grid dos" style="gap:10px">'+n('Aseo que pagas por cada salida','aseo','60000')+n('Tarifa de limpieza que paga el huésped (por reserva)','limpieza','60000','Se suma al precio por noche en Airbnb; 0 si no cobras')+n('Gasto por noche ocupada','gastoNoche','0','Amenities, energía extra')+n('Comisión Airbnb % (15,5% + IVA)','airbnbPct','18,45')+n('Comisión BLÜM %','blumPct', cb.blum!=null? String(Math.round(cb.blum*1000)/10).replace('.',',') : '15','Del contrato vigente si lo dejas vacío')+
     '<div><label>Ubicación</label><select data-k="zona"><option value="urbano">Ciudad</option><option value="playa"'+(c.zona==='playa'?' selected':'')+'>Playa</option></select></div></div>'+
-    '<h3 class="tit-card" style="margin-top:14px">5 referentes (anuncios parecidos de la zona)</h3>'+refs.map((r,i)=>'<input data-rl="'+i+'" value="'+esc(r.link||'')+'" placeholder="https://www.airbnb.com.co/rooms/… · referente '+(i+1)+'" style="margin-top:6px">').join('')+
+    '<h3 class="tit-card" style="margin-top:14px">5 referentes (anuncios parecidos de la zona)</h3>'+refs.map((r,i)=>'<input data-rl="'+i+'" value="'+esc(r.link||'')+'" placeholder="Pega aquí el enlace del referente '+(i+1)+' (airbnb.com.co/rooms/…)" style="margin-top:6px">').join('')+
     '<div class="eti" style="text-transform:none;letter-spacing:0;margin-top:4px">Con estos anuncios se analiza qué noches tienen ocupadas y a qué precio, y con eso se ajustan tus tarifas sin bajar del punto de equilibrio.</div>'+
     '<h3 class="tit-card" style="margin-top:14px">Multiplicadores (vacío = automático)</h3><div class="grid dos" style="gap:10px">'+[['tFds','Fin de semana','×1,25'],['tEsp','Puentes y festivos','×1,5'],['tEvt','Eventos','×2'],['tTop','Fechas top (Carnaval, 30–31 dic)','×3']].map(x=>'<div><label>'+x[1]+'</label><input data-k="'+x[0]+'" value="'+esc(v(c[x[0]]))+'" placeholder="'+x[2]+'"></div>').join('')+'</div>';
   const m=modal('Referentes y costos · '+os.nombre, cuerpo, [{ t:'Cancelar', sec:true, fn:cerrarModal }, { t:'Guardar', fn: async b => {
-    const dd=JSON.parse(JSON.stringify(datosT())), nc=Object.assign({}, dd.props[os.id]||{}), dec=x=>{ const y=parseFloat(String(x).replace(',','.')); return isFinite(y)?y:null; };
+    TAR=null; const dd=JSON.parse(JSON.stringify(datosT())), nc=Object.assign({}, dd.props[os.id]||{}), dec=x=>{ const y=parseFloat(String(x).replace(',','.')); return isFinite(y)?y:null; };
     m.querySelectorAll('[data-k]').forEach(i => { const k=i.dataset.k, val=i.value.trim(); nc[k] = k==='zona' ? val : /Pct$|^t[A-Z]/.test(k) ? dec(val) : (val===''?'':pesos(val)); });
     const crudos=[0,1,2,3,4].map(i => m.querySelector('[data-rl="'+i+'"]').value.trim());
     const refsN=crudos.map(v => { const id=(v.match(/rooms\/(?:plus\/|luxury\/)?(\d{5,})/)||v.match(/^(\d{5,})$/)||[])[1]; return { link: id ? 'https://www.airbnb.com.co/rooms/'+id : '' }; });
     if (!refsN.some(r=>r.link) && !nc.arriendo && !nc.otros) return toast('El formulario está vacío: escribe los costos y pega los enlaces de los 5 referentes antes de guardar.', true);
-    const malo=crudos.findIndex((v,i) => v && !refsN[i].link); if (malo>=0) return toast('El referente '+(malo+1)+' no es un enlace de anuncio de Airbnb (debe tener /rooms/ y el número). Ábrelo en Airbnb y copia el enlace de la barra.', true);
+    const malos=crudos.map((v,i)=>v && !refsN[i].link ? i+1 : 0).filter(Boolean);
+    if (malos.length && !confirmarSimple('El referente '+malos.join(', ')+' no es un enlace de anuncio (debe tener /rooms/ y el número; los enlaces cortos de "Compartir" no sirven: ábrelo y copia la barra de direcciones). ¿Guardar los costos y los demás referentes de todos modos?')) return;
     if ((nc.airbnbPct||15.5)+(nc.blumPct!=null?nc.blumPct:15) >= 90) return toast('Las comisiones no pueden sumar 90% o más', true);
     const antes=dd.props[os.id]||{}, cambia=['arriendo','otros','aseo','limpieza','gastoNoche','airbnbPct','blumPct','tFds','tEsp','tEvt','tTop','zona'].some(k=>String(antes[k]??'')!==String(nc[k]??'')) || JSON.stringify(antes.refs||[])!==JSON.stringify(refsN);
     nc.refs=refsN; nc.plan=nc.plan||{}; if (cambia) for (const k in nc.plan) if (k>RV.TM) delete nc.plan[k];
@@ -3216,6 +3217,14 @@ async function editarInmueble(os){
     try { await guardarT(dd, 'Referentes y costos: '+os.nombre); } catch(e){ b.disabled=false; b.textContent='Guardar'; return toast(e.message,true); } cerrarModal(); toast('Guardado '+os.nombre+': '+refsN.filter(r=>r.link).length+' referentes · arriendo '+cop(nc.arriendo||0)+'. Tarifas y presupuesto recalculados.'); rev=null;
     const vis=document.querySelector('section:not(.oculto)'); if (vis&&vis.id==='m-proy') cargarProy(true); else if (vis&&vis.id==='m-ppto') cargarPpto(true);
   } }]);
+  /* no perder lo escrito al cerrar sin guardar */
+  let sucio=false; m.addEventListener('input',()=>{ sucio=true; });
+  const salir=()=>!sucio || confirmarSimple('Tienes cambios sin guardar en '+os.nombre+'. ¿Cerrar sin guardar?');
+  m.querySelector('.cerrar').onclick=()=>{ if (salir()) cerrarModal(); };
+  const bc=m.querySelector('[data-a="0"]'); if (bc) bc.onclick=()=>{ if (salir()) cerrarModal(); };
+  m.addEventListener('click', e=>{ if (e.target===m && !salir()) e.stopImmediatePropagation(); }, true);
+  const esc_=e=>{ if (!document.body.contains(m)) return window.removeEventListener('keydown', esc_, true); if (e.key==='Escape' && !salir()) e.stopImmediatePropagation(); };
+  window.addEventListener('keydown', esc_, true);
 }
 /* botón dentro de la ficha de cada propiedad (solo renta corta) */
 const _abrirFichaPropiedadOrig = abrirFichaPropiedad;
@@ -3654,6 +3663,42 @@ function tablaRefs(p){
     return '<tr><td><a href="'+esc(c.link)+'" target="_blank" rel="noopener">'+esc(c.name)+'</a></td><td class="num-r">'+(obs.length? oc+' de '+obs.length+' noches':sinDato)+'</td><td class="num-r">'+(med?cop(med):(e&&e.aviso?'<span class="eti">sin precio</span>':'—'))+'</td><td class="num-r">'+(ult?esc(fechaLarga(ult)):'—')+'</td></tr>'; };
   return '<div class="card" style="margin-bottom:14px"><h3 class="tit-card">Tus 5 referentes · próximos 30 días</h3><div class="tabla-wrap"><table class="tabla"><tr><th>Referente</th><th class="num-r">Ocupadas</th><th class="num-r">Precio por noche</th><th class="num-r">Revisado</th></tr>'+cs.map(fila).join('')+'</table></div><p class="nota-p" style="margin-top:8px">Precio = lo que paga el huésped por noche en una estadía de 2 noches. Cada día tu tarifa se ajusta hasta ±15% hacia lo que cobran ellos esa fecha (+8% si la mayoría está llena) y nunca baja de tu punto de equilibrio.</p>'+lineaRobot()+'</div>';
 }
+
+/* ═════════ Arreglos de la auditoría: no pisar datos, subir de verdad, avisar errores ═════════ */
+function mezclar(loc, rt){ const out=JSON.parse(JSON.stringify(loc||{props:{}})); out.props=out.props||{};
+  if (rt&&rt.props) for (const [k,v] of Object.entries(rt.props)){ const l=out.props[k]; if (!l || String(v.actualizado||'')>String(l.actualizado||'')) out.props[k]=v; }
+  return out; }
+async function subirTarAhora(){
+  if (!ghCfg()) return; let ult=null;
+  for (let i=0;i<3;i++){
+    try { const rt=await ghLeer('data/os-tarifas.json'); const m=mezclar(TAR, rt); TAR=m; try { localStorage.setItem(T_KEY, JSON.stringify(m)); } catch(e){}
+      const body={ message:'BLÜM OS: tarifas y costos', content:b64enc(JSON.stringify(m,null,1)) }; if (shas['data/os-tarifas.json']) body.sha=shas['data/os-tarifas.json'];
+      const j=await gh('data/os-tarifas.json',{method:'PUT',body}); shas['data/os-tarifas.json']=j.content.sha; localStorage.removeItem('blum_tar_pend'); return; }
+    catch(e){ ult=e; if (!/409|422/.test(e.message)) break; }
+  }
+  try { localStorage.setItem('blum_tar_pend','1'); } catch(e){}
+  throw new Error('Se guardó en este navegador pero no llegó a GitHub ('+(ult&&ult.message)+'). Se reintentará al abrir el demo.');
+}
+function subirTar(){ if (!ghCfg()) return; try { localStorage.setItem('blum_tar_pend','1'); } catch(e){} clearTimeout(subT); subT=setTimeout(()=>subirTarAhora().catch(e=>toast(e.message,true)), 1500); }
+async function guardarT(d, motivo){
+  const antes=linksDe(TAR); TAR=d; try { localStorage.setItem(T_KEY, JSON.stringify(d)); } catch(e){ throw new Error('No se pudo guardar en este navegador'); }
+  const cambiaLinks=linksDe(d)!==antes, delForm=/^Referentes y costos/.test(motivo||'');
+  if (!ghCfg()) { if (cambiaLinks||delForm) setTimeout(conectarRobot, 900); return; }
+  if (delForm) {           // el formulario sube en el acto y siempre avisa al robot
+    clearTimeout(subT); await subirTarAhora(); await subirReferentes(); PEND=Date.now(); vigilarRobot();
+    setTimeout(()=>toast('Enviado al robot: revisando tus referentes en Airbnb. En unos 5 minutos aparecen aquí.'), 1800); return; }
+  subirTar();
+  if (cambiaLinks) { try { await subirReferentes(); PEND=Date.now(); vigilarRobot(); } catch(e){ setTimeout(()=>toast('No se pudo avisar al robot: '+e.message, true), 1500); } }
+}
+/* si otra pestaña guarda, esta se actualiza y no pisa sus datos */
+window.addEventListener('storage', e=>{ if (e.key===T_KEY){ TAR=null; cargarTar(); try { repintar(); } catch(x){} } });
+/* al abrir: reintentar subidas pendientes y, si el robot no revisó hoy, pedirle que revise */
+const _sincronizarBase=sincronizar;
+sincronizar=async function(forzar){ const r=await _sincronizarBase(forzar); try {
+  if (ghCfg()) { if (localStorage.getItem('blum_tar_pend')) subirTarAhora().catch(e=>console.warn(e));
+    const hoyB=hoy(), hora=Number(new Date().toLocaleString('en-US',{hour:'numeric',hour12:false,timeZone:'America/Bogota'}));
+    if (ROBOT && ROBOT.fecha && ROBOT.fecha<hoyB && hora>=7 && localStorage.getItem('blum_robot_dia')!==hoyB) { localStorage.setItem('blum_robot_dia', hoyB); subirReferentes().then(()=>{ PEND=Date.now(); vigilarRobot(); }).catch(e=>console.warn(e)); } } } catch(e){}
+  return r; };
 
 </script>
 </body>
