@@ -3207,12 +3207,13 @@ async function editarInmueble(os){
     m.querySelectorAll('[data-k]').forEach(i => { const k=i.dataset.k, val=i.value.trim(); nc[k] = k==='zona' ? val : /Pct$|^t[A-Z]/.test(k) ? dec(val) : (val===''?'':pesos(val)); });
     const crudos=[0,1,2,3,4].map(i => m.querySelector('[data-rl="'+i+'"]').value.trim());
     const refsN=crudos.map(v => { const id=(v.match(/rooms\/(?:plus\/|luxury\/)?(\d{5,})/)||v.match(/^(\d{5,})$/)||[])[1]; return { link: id ? 'https://www.airbnb.com.co/rooms/'+id : '' }; });
+    if (!refsN.some(r=>r.link) && !nc.arriendo && !nc.otros) return toast('El formulario está vacío: escribe los costos y pega los enlaces de los 5 referentes antes de guardar.', true);
     const malo=crudos.findIndex((v,i) => v && !refsN[i].link); if (malo>=0) return toast('El referente '+(malo+1)+' no es un enlace de anuncio de Airbnb (debe tener /rooms/ y el número). Ábrelo en Airbnb y copia el enlace de la barra.', true);
     if ((nc.airbnbPct||15.5)+(nc.blumPct!=null?nc.blumPct:15) >= 90) return toast('Las comisiones no pueden sumar 90% o más', true);
     const antes=dd.props[os.id]||{}, cambia=['arriendo','otros','aseo','limpieza','gastoNoche','airbnbPct','blumPct','tFds','tEsp','tEvt','tTop','zona'].some(k=>String(antes[k]??'')!==String(nc[k]??'')) || JSON.stringify(antes.refs||[])!==JSON.stringify(refsN);
     nc.refs=refsN; nc.plan=nc.plan||{}; if (cambia) for (const k in nc.plan) if (k>RV.TM) delete nc.plan[k];
     nc.nombre=os.nombre; nc.actualizado=new Date().toISOString(); dd.props[os.id]=nc; b.disabled=true; b.textContent='Guardando…';
-    try { await guardarT(dd, 'Referentes y costos: '+os.nombre); } catch(e){ b.disabled=false; b.textContent='Guardar'; return toast(e.message,true); } cerrarModal(); toast('Guardado. Tarifas y presupuesto recalculados.'); rev=null;
+    try { await guardarT(dd, 'Referentes y costos: '+os.nombre); } catch(e){ b.disabled=false; b.textContent='Guardar'; return toast(e.message,true); } cerrarModal(); toast('Guardado '+os.nombre+': '+refsN.filter(r=>r.link).length+' referentes · arriendo '+cop(nc.arriendo||0)+'. Tarifas y presupuesto recalculados.'); rev=null;
     const vis=document.querySelector('section:not(.oculto)'); if (vis&&vis.id==='m-proy') cargarProy(true); else if (vis&&vis.id==='m-ppto') cargarPpto(true);
   } }]);
 }
